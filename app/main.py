@@ -1,9 +1,10 @@
 import sys
 import time
+from urllib.parse import unquote, urlparse
+
 import cv2
 import pyotp
-from pyzbar.pyzbar import decode
-from urllib.parse import unquote, urlparse
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -19,7 +20,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-from PySide6.QtCore import QTimer
+from pyzbar.pyzbar import decode
+
 from helpers import prompt_for_password, save_accounts, load_accounts
 
 
