@@ -4,7 +4,7 @@ from urllib.parse import unquote, urlparse
 
 import cv2
 import pyotp
-from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtCore import Qt, QTimer, QRectF, QRect
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -49,8 +49,8 @@ class CircularCountdown(QWidget):
         super().__init__(parent)
         self.interval = interval
         self.value = interval
-        self.setFixedSize(42, 42)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(35, 35)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def update_value(self, value):
         self.value = value
@@ -58,21 +58,21 @@ class CircularCountdown(QWidget):
 
     def paintEvent(self, event):
         size = min(self.width(), self.height())
-        rect = QRectF(4, 4, size - 8, size - 8)
+        rect = QRect(4, 4, size - 8, size - 8)
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Draw background grey circle
         painter.setPen(QPen(QColor("#E0E0E0"), 5))
         painter.drawEllipse(rect)
         # Draw purple arc representing countdown
         angle_span = 360 * (self.value / self.interval)
-        painter.setPen(QPen(QColor("#6C4CE0"), 5))
-        painter.drawArc(rect, 90 * 16, -angle_span * 16)
+        painter.setPen(QPen(QColor("#6C4CE0"), 4))
+        painter.drawArc(rect, 90 * 16, -int(angle_span * 16))
         # Draw seconds text in center
         painter.setPen(QColor("#6C4CE0"))
-        font = QFont("Arial", 12, QFont.Bold)
+        font = QFont("Times", 8, QFont.Weight.Bold)
         painter.setFont(font)
-        painter.drawText(rect, Qt.AlignCenter, f"{self.value}")
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self.value}")
 
 
 class OtpCard(QWidget):
@@ -85,7 +85,7 @@ class OtpCard(QWidget):
         self.totp = totp
         self.interval = interval
         self.logo_path = logo_path
-        self.setFixedWidth(300)
+        self.setFixedWidth(175)
         self.setFixedHeight(75)
 
         self.setStyleSheet(
@@ -114,37 +114,76 @@ class OtpCard(QWidget):
         main_layout = QVBoxLayout(self)
 
         top_sub_layout = QHBoxLayout()
+        top_sub_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top_left_layout = QHBoxLayout()
+        top_sub_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        if self.logo_path:
+            logo_label = QLabel()
+            pixmap = QPixmap(self.logo_path).scaled(
+                25,
+                25,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            logo_label.setPixmap(pixmap)
+            top_left_layout.addWidget(logo_label)
+        else:
+            spacer = QLabel("")
+            spacer.setFixedWidth(25)
+            top_left_layout.addWidget(spacer)
+
+        top_mid_layout = QVBoxLayout()
+        top_mid_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.label_account = QLabel(self.account_name)
+        self.label_account.setFixedHeight(15)
+        self.label_account.setFont(QFont("Times", 10))
+        self.label_account.setStyleSheet("color: #FFF; background-color: transparent;")
+        self.label_user = QLabel(self.user)
+        self.label_user.setFixedHeight(15)
+        self.label_user.setFont(QFont("Times", 8))
+        self.label_user.setStyleSheet("color: #FFF; background-color: transparent;")
+        top_mid_layout.addWidget(self.label_account)
+        top_mid_layout.addWidget(self.label_user)
+
+        top_right_layout = QHBoxLayout()
+        top_sub_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.countdown_circle = CircularCountdown(self.interval)
-        top_sub_layout.addWidget(self.countdown_circle)
+        top_right_layout.addWidget(self.countdown_circle)
+
+        top_sub_layout.addLayout(top_left_layout)
+        top_sub_layout.addLayout(top_mid_layout)
+        top_sub_layout.addLayout(top_right_layout)
 
         bottom_sub_layout = QHBoxLayout()
         bottom_sub_left_layout = QHBoxLayout()
+        bottom_sub_left_layout.setContentsMargins(0, 17, 0, 0)
         bottom_sub_right_layout = QVBoxLayout()
         bottom_sub_right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bottom_sub_right_layout.setSpacing(5)
-        bottom_sub_left_layout.setContentsMargins(0, 17, 0, 0)
 
         self.label_current = QLabel("-- -- --")
         self.label_current.setFixedSize(75, 20)
         self.label_current.setFont(QFont("Times", 10, QFont.Weight.ExtraBold))
         self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_current.setStyleSheet(
-            "color: #fff; " "background-color: transparent; " "letter-spacing: 2px; "
+            "color: #fff; background-color: transparent; letter-spacing: 2px;"
         )
         bottom_sub_left_layout.addWidget(self.label_current)
 
         label_next_text = QLabel("Next")
-        label_next_text.setStyleSheet("  color: #fff; background-color: transparent;")
         label_next_text.setFont(QFont("Times", 9))
         label_next_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label_next_text.setStyleSheet("color: #fff; background-color: transparent;")
 
         self.label_next_code = QLabel("-- -- --")
         self.label_next_code.setFixedSize(75, 20)
         self.label_next_code.setFont(QFont("Times", 8, QFont.Weight.DemiBold))
         self.label_next_code.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label_next_code.setStyleSheet(
-            "color: #fff; " "background-color: transparent; " "letter-spacing: 2px; "
+            "color: #fff; background-color: transparent; letter-spacing: 2px;"
         )
+
         bottom_sub_right_layout.addWidget(label_next_text)
         bottom_sub_right_layout.addWidget(self.label_next_code)
 
@@ -153,90 +192,6 @@ class OtpCard(QWidget):
 
         main_layout.addLayout(top_sub_layout)
         main_layout.addLayout(bottom_sub_layout)
-
-        """main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 16, 20, 16)
-        main_layout.setSpacing(6)
-
-        # Top Row: logo (optional), account + user, countdown circle
-        top_row = QHBoxLayout()
-        top_row.setSpacing(12)
-
-        if self.logo_path:
-            logo_label = QLabel()
-            pixmap = QPixmap(self.logo_path).scaled(
-                28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            logo_label.setPixmap(pixmap)
-            top_row.addWidget(logo_label)
-        else:
-            # For demo, add placeholder label for spacing
-            spacer = QLabel("")
-            spacer.setFixedWidth(28)
-            top_row.addWidget(spacer)
-
-        names_layout = QVBoxLayout()
-        self.label_account = QLabel(self.account_name)
-        self.label_account.setStyleSheet("font-weight: 600; font-size: 14px;")
-        self.label_user = QLabel(self.user)
-        self.label_user.setStyleSheet("color: #666; font-size: 11px;")
-
-        names_layout.addWidget(self.label_account)
-        names_layout.addWidget(self.label_user)
-        top_row.addLayout(names_layout)
-        top_row.addStretch()
-
-        self.countdown_circle = CircularCountdown(self.interval)
-        top_row.addWidget(self.countdown_circle)
-        main_layout.addLayout(top_row)
-
-        # OTP codes row
-        otp_row = QHBoxLayout()
-        otp_left_row = QVBoxLayout()
-        otp_left_row.setContentsMargins(0, 11, 0, 0)
-
-        self.label_current = QLabel("-- -- --")
-        self.label_current.setFixedSize(75, 20)
-        self.label_current.setFont(QFont("times", 8, QFont.Weight.ExtraBold))
-        self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        self.label_current.setStyleSheet(
-            "color: #222; "
-            "letter-spacing: 2px; "
-            "padding-left: 5px; "
-            "padding-right: 5px; "
-            "border-radius: 10px; "
-        )
-        otp_left_row.addWidget(
-            self.label_current, alignment=Qt.AlignmentFlag.AlignVCenter
-        )
-
-        otp_right = QVBoxLayout()
-
-        label_next_text = QLabel("Next")
-        label_next_text.setFixedSize(25, 15)
-        label_next_text.setStyleSheet("  color: #666; background-color: transparent;")
-        label_next_text.setFont(QFont("Times", 9))
-
-        otp_right.addWidget(label_next_text)
-
-        self.label_next_code = QLabel("-- -- --")
-        self.label_next_code.setFont(QFont("times", 8, QFont.Weight.Bold))
-        self.label_next_code.setFixedSize(75, 20)
-
-        self.label_next_code.setStyleSheet(
-            "color: #222; "
-            "letter-spacing: 2px; "
-            "padding-left: 5px; "
-            "padding-right: 5px; "
-            "border-radius: 10px; "
-        )
-
-        otp_right.addWidget(self.label_next_code)
-
-        otp_row.addLayout(otp_left_row)
-        otp_row.addLayout(otp_right)
-
-        main_layout.addLayout(otp_row)"""
 
     def update_totp(self):
         now = int(time.time())
