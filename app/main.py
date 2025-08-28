@@ -4,7 +4,7 @@ from urllib.parse import unquote, urlparse
 
 import cv2
 import pyotp
-from PySide6.QtCore import Qt, QTimer, QRectF, QRect
+from PySide6.QtCore import Qt, QTimer, QRectF, QRect, QSize
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -49,7 +49,7 @@ class CircularCountdown(QWidget):
         super().__init__(parent)
         self.interval = interval
         self.value = interval
-        self.setFixedSize(35, 35)
+        self.setFixedSize(50, 50)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def update_value(self, value):
@@ -85,7 +85,7 @@ class OtpCard(QWidget):
         self.totp = totp
         self.interval = interval
         self.logo_path = logo_path
-        self.setFixedWidth(175)
+        self.setFixedWidth(300)
         self.setFixedHeight(75)
 
         self.setStyleSheet(
@@ -111,87 +111,63 @@ class OtpCard(QWidget):
 
     def init_ui(self):
 
-        main_layout = QVBoxLayout(self)
-
-        top_sub_layout = QHBoxLayout()
-        top_sub_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        top_left_layout = QHBoxLayout()
-        top_sub_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        if self.logo_path:
-            logo_label = QLabel()
-            pixmap = QPixmap(self.logo_path).scaled(
-                25,
-                25,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            logo_label.setPixmap(pixmap)
-            top_left_layout.addWidget(logo_label)
-        else:
-            spacer = QLabel("")
-            spacer.setFixedWidth(25)
-            top_left_layout.addWidget(spacer)
-
-        top_mid_layout = QVBoxLayout()
-        top_mid_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        main_layout = QHBoxLayout(self)
+        main_layout.setSpacing(10)
+        sub_layout = QVBoxLayout()
+        sub_layout.setSpacing(1)
+        sub_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.label_account = QLabel(self.account_name)
         self.label_account.setFixedHeight(15)
-        self.label_account.setFont(QFont("Times", 10))
+        self.label_account.setFont(QFont("Times", 12))
         self.label_account.setStyleSheet("color: #FFF; background-color: transparent;")
         self.label_user = QLabel(self.user)
         self.label_user.setFixedHeight(15)
-        self.label_user.setFont(QFont("Times", 8))
+        self.label_user.setFont(QFont("Times", 9))
         self.label_user.setStyleSheet("color: #FFF; background-color: transparent;")
-        top_mid_layout.addWidget(self.label_account)
-        top_mid_layout.addWidget(self.label_user)
-
-        top_right_layout = QHBoxLayout()
-        top_sub_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.countdown_circle = CircularCountdown(self.interval)
-        top_right_layout.addWidget(self.countdown_circle)
-
-        top_sub_layout.addLayout(top_left_layout)
-        top_sub_layout.addLayout(top_mid_layout)
-        top_sub_layout.addLayout(top_right_layout)
-
-        bottom_sub_layout = QHBoxLayout()
-        bottom_sub_left_layout = QHBoxLayout()
-        bottom_sub_left_layout.setContentsMargins(0, 17, 0, 0)
-        bottom_sub_right_layout = QVBoxLayout()
-        bottom_sub_right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bottom_sub_right_layout.setSpacing(5)
-
         self.label_current = QLabel("-- -- --")
-        self.label_current.setFixedSize(75, 20)
-        self.label_current.setFont(QFont("Times", 10, QFont.Weight.ExtraBold))
+        # self.label_current.setFixedSize(125, 25)
+        self.label_current.setFixedHeight(25)
+        self.label_current.setFont(QFont("Times", 15))
         self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_current.setStyleSheet(
             "color: #fff; background-color: transparent; letter-spacing: 2px;"
         )
-        bottom_sub_left_layout.addWidget(self.label_current)
 
-        label_next_text = QLabel("Next")
-        label_next_text.setFont(QFont("Times", 9))
-        label_next_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label_next_text.setStyleSheet("color: #fff; background-color: transparent;")
+        sub_layout.addWidget(self.label_account)
+        sub_layout.addWidget(self.label_user)
+        sub_layout.addWidget(self.label_current)
 
-        self.label_next_code = QLabel("-- -- --")
-        self.label_next_code.setFixedSize(75, 20)
-        self.label_next_code.setFont(QFont("Times", 8, QFont.Weight.DemiBold))
-        self.label_next_code.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label_next_code.setStyleSheet(
-            "color: #fff; background-color: transparent; letter-spacing: 2px;"
-        )
+        main_layout.addLayout(sub_layout)
+        self.countdown_circle = CircularCountdown(self.interval)
 
-        bottom_sub_right_layout.addWidget(label_next_text)
-        bottom_sub_right_layout.addWidget(self.label_next_code)
+        main_layout.addWidget(self.countdown_circle)
 
-        bottom_sub_layout.addLayout(bottom_sub_left_layout)
-        bottom_sub_layout.addLayout(bottom_sub_right_layout)
+        self.toggle_button = QPushButton()
+        self.toggle_button.setStyleSheet("background-color: transparent; border: none;")
+        icon_hide = QIcon("images/hide-24.png")
+        icon_show = QIcon("images/show-24.png")
+        self.toggle_button.setIcon(icon_hide)
+        self.toggle_button.setIconSize(QSize(24, 24))
+        self.toggle_button.setFixedSize(25, 25)
 
-        main_layout.addLayout(top_sub_layout)
-        main_layout.addLayout(bottom_sub_layout)
+        # Store icons for toggling
+        self.icon_hide = icon_hide
+        self.icon_show = icon_show
+
+        # self.toggle_button.clicked.connect(self.toggle_code_visibility)
+
+        main_layout.addWidget(self.toggle_button)
+
+        self.copy_button = QPushButton()
+        self.copy_button.setStyleSheet("background-color: transparent; border: none;")
+        icon_copy = QIcon("images/copy-24.png")
+        self.copy_button.setIcon(icon_copy)
+        self.copy_button.setIconSize(QSize(24, 24))
+        self.copy_button.setFixedSize(25, 25)
+
+        # self.copy_button.clicked.connect(self.copy_code_to_clipboard)
+
+        main_layout.addWidget(self.copy_button)
 
     def update_totp(self):
         now = int(time.time())
@@ -205,7 +181,7 @@ class OtpCard(QWidget):
             current = "-- -- --"
             next_code = "-- -- --"
         self.label_current.setText(" ".join([current[:3], current[3:]]))
-        self.label_next_code.setText(" ".join([next_code[:3], next_code[3:]]))
+        # self.label_next_code.setText(" ".join([next_code[:3], next_code[3:]]))
 
 
 class Virex(QMainWindow):
@@ -218,7 +194,7 @@ class Virex(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("Virex")
-        self.setMinimumSize(650, 500)
+        self.setFixedSize(350, 500)
         self.setup_mainwindow()
         self.refresh_tiles()
 
