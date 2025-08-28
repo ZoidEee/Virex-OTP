@@ -4,15 +4,8 @@ from urllib.parse import unquote, urlparse
 
 import cv2
 import pyotp
-from PySide6.QtCore import Qt, QTimer, QRectF, QRect, QSize
-from PySide6.QtGui import (
-    QColor,
-    QFont,
-    QPainter,
-    QPen,
-    QPixmap,
-    QIcon,
-)
+from PySide6.QtCore import Qt, QTimer, QRect
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QIcon, QSize
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -24,10 +17,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QScrollArea,
-    QGridLayout,
-    QFileDialog,
     QMessageBox,
     QGraphicsDropShadowEffect,
+    QFileDialog,
 )
 from pyzbar.pyzbar import decode
 
@@ -35,6 +27,8 @@ from helpers import prompt_for_password, save_accounts, load_accounts
 
 
 class NewPopup(QInputDialog):
+    """Popup dialog to get user input with configurable prompt and title."""
+
     def __init__(self, prompt, title="Input"):
         super().__init__()
         self.setWindowTitle(title)
@@ -45,6 +39,8 @@ class NewPopup(QInputDialog):
 
 
 class CircularCountdown(QWidget):
+    """Widget for displaying a circular countdown timer."""
+
     def __init__(self, interval=30, parent=None):
         super().__init__(parent)
         self.interval = interval
@@ -53,79 +49,83 @@ class CircularCountdown(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def update_value(self, value):
+        """Update the countdown value and refresh the widget."""
         self.value = value
         self.update()
 
     def paintEvent(self, event):
+        """Draw the countdown circle and remaining seconds."""
         size = min(self.width(), self.height())
         rect = QRect(4, 4, size - 8, size - 8)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Draw background grey circle
+
+        # Draw background circle in grey
         painter.setPen(QPen(QColor("#E0E0E0"), 5))
         painter.drawEllipse(rect)
-        # Draw purple arc representing countdown
+
+        # Draw the purple arc representing the remaining time
         angle_span = 360 * (self.value / self.interval)
         painter.setPen(QPen(QColor("#6C4CE0"), 4))
         painter.drawArc(rect, 90 * 16, -int(angle_span * 16))
-        # Draw seconds text in center
+
+        # Draw remaining seconds text in the center
         painter.setPen(QColor("#6C4CE0"))
-        font = QFont("Times", 8, QFont.Weight.Bold)
+        font = QFont("Arial", 12, QFont.Weight.Bold)
         painter.setFont(font)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self.value}")
 
 
 class OtpCard(QWidget):
-    def __init__(
-        self, account_name, user, totp, interval=30, logo_path=None, parent=None
-    ):
+    """Card widget to display an OTP account with current TOTP code."""
+
+    def __init__(self, account_name, user, totp, interval=30, logo_path=None, parent=None):
         super().__init__(parent)
         self.account_name = account_name
         self.user = user
         self.totp = totp
         self.interval = interval
         self.logo_path = logo_path
-        self.setFixedWidth(300)
-        self.setFixedHeight(75)
+        self.setFixedSize(300, 75)
 
         self.setStyleSheet(
-            """
-            QWidget {
-                background-color: #FFFFFF;
-                border-radius: 16px;
-            }
-        """
+            "QWidget { background-color: #FFFFFF; border-radius: 16px; }"
         )
         self.init_ui()
 
+        # Add subtle drop shadow effect
         shadow = QGraphicsDropShadowEffect()
         shadow.setColor(QColor(100, 100, 100, 50))
         shadow.setBlurRadius(14)
         shadow.setOffset(0, 4)
         self.setGraphicsEffect(shadow)
 
+        # Timer to update TOTP every second
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_totp)
         self.timer.start(1000)
         self.update_totp()
 
     def init_ui(self):
-
+        """Initialize the UI components of the OTP card."""
         main_layout = QHBoxLayout(self)
         main_layout.setSpacing(10)
+
         sub_layout = QVBoxLayout()
         sub_layout.setSpacing(1)
         sub_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
         self.label_account = QLabel(self.account_name)
         self.label_account.setFixedHeight(15)
         self.label_account.setFont(QFont("Times", 12))
         self.label_account.setStyleSheet("color: #FFF; background-color: transparent;")
+
         self.label_user = QLabel(self.user)
         self.label_user.setFixedHeight(15)
         self.label_user.setFont(QFont("Times", 9))
         self.label_user.setStyleSheet("color: #FFF; background-color: transparent;")
+
         self.label_current = QLabel("-- -- --")
-        # self.label_current.setFixedSize(125, 25)
         self.label_current.setFixedHeight(25)
         self.label_current.setFont(QFont("Times", 15))
         self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -138,23 +138,21 @@ class OtpCard(QWidget):
         sub_layout.addWidget(self.label_current)
 
         main_layout.addLayout(sub_layout)
-        self.countdown_circle = CircularCountdown(self.interval)
 
+        self.countdown_circle = CircularCountdown(self.interval)
         main_layout.addWidget(self.countdown_circle)
 
+        # Buttons for toggling visibility and copying code (signals can be connected later)
         self.toggle_button = QPushButton()
         self.toggle_button.setStyleSheet("background-color: transparent; border: none;")
         icon_hide = QIcon("images/hide-24.png")
         icon_show = QIcon("images/show-24.png")
         self.toggle_button.setIcon(icon_hide)
-        self.toggle_button.setIconSize(QSize(24, 24))
+        self.toggle_button.setIconSize(QSize(20, 20))
         self.toggle_button.setFixedSize(25, 25)
 
-        # Store icons for toggling
         self.icon_hide = icon_hide
         self.icon_show = icon_show
-
-        # self.toggle_button.clicked.connect(self.toggle_code_visibility)
 
         main_layout.addWidget(self.toggle_button)
 
@@ -162,29 +160,30 @@ class OtpCard(QWidget):
         self.copy_button.setStyleSheet("background-color: transparent; border: none;")
         icon_copy = QIcon("images/copy-24.png")
         self.copy_button.setIcon(icon_copy)
-        self.copy_button.setIconSize(QSize(24, 24))
+        self.copy_button.setIconSize(QSize(20, 20))
         self.copy_button.setFixedSize(25, 25)
-
-        # self.copy_button.clicked.connect(self.copy_code_to_clipboard)
 
         main_layout.addWidget(self.copy_button)
 
     def update_totp(self):
+        """Update the current displayed TOTP code and countdown."""
         now = int(time.time())
         elapsed = now % self.interval
         remaining = self.interval - elapsed
         self.countdown_circle.update_value(remaining)
+
         try:
             current = self.totp.now()
-            next_code = self.totp.at(now + remaining)
         except Exception:
             current = "-- -- --"
-            next_code = "-- -- --"
+
+        # Format code with a space in the middle like '123 456'
         self.label_current.setText(" ".join([current[:3], current[3:]]))
-        # self.label_next_code.setText(" ".join([next_code[:3], next_code[3:]]))
 
 
 class Virex(QMainWindow):
+    """Main application window and controller for Virex OTP manager."""
+
     def __init__(self, master_pw):
         super().__init__()
         self.master_pw = master_pw
@@ -193,12 +192,14 @@ class Virex(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
+        """Initialize the main UI window and refresh OTP cards."""
         self.setWindowTitle("Virex")
         self.setFixedSize(350, 500)
         self.setup_mainwindow()
         self.refresh_tiles()
 
     def setup_mainwindow(self):
+        """Set up the main window layout with buttons and search bar."""
         btn_new = QPushButton("New")
         btn_new.clicked.connect(self.show_new_options)
         search_bar = QLineEdit()
@@ -210,12 +211,8 @@ class Virex(QMainWindow):
         top_layout.addWidget(search_bar)
         top_layout.addWidget(btn_settings)
 
-        self.grid_layout = QGridLayout()
-        self.grid_layout.setHorizontalSpacing(24)
-        self.grid_layout.setVerticalSpacing(20)
-
-        self.grid_layout.setColumnStretch(0, 1)
-        self.grid_layout.setColumnStretch(1, 1)
+        self.grid_layout = QVBoxLayout()
+        self.grid_layout.setSpacing(20)
 
         scroll_area = QScrollArea()
         container = QWidget()
@@ -232,8 +229,9 @@ class Virex(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def parse_account_label(self, key_uri):
+        """Parse account and user from a given otpauth URI."""
         try:
-            path = urlparse(key_uri).path  # "/ExampleOrg:user@example.com"
+            path = urlparse(key_uri).path  # e.g., "/ExampleOrg:user@example.com"
             label = path.lstrip("/")
             if ":" in label:
                 acc, user = label.split(":", 1)
@@ -244,6 +242,7 @@ class Virex(QMainWindow):
             return "Unknown", ""
 
     def refresh_tiles(self):
+        """Clear existing OTP cards and reload current accounts."""
         while self.grid_layout.count():
             item = self.grid_layout.takeAt(0)
             widget = item.widget()
@@ -251,7 +250,7 @@ class Virex(QMainWindow):
                 widget.deleteLater()
         self.cards.clear()
 
-        for idx, account in enumerate(self.accounts):
+        for account in self.accounts:
             if "key_uri" in account:
                 acc_name, user = self.parse_account_label(account["key_uri"])
                 totp = pyotp.parse_uri(account["key_uri"])
@@ -260,12 +259,12 @@ class Virex(QMainWindow):
                 user = ""
                 totp = pyotp.TOTP(account.get("secret", ""))
 
-            # Optionally supply logo path or None
             card = OtpCard(acc_name, user, totp, logo_path=None)
-            self.grid_layout.addWidget(card, idx // 2, idx % 2)
+            self.grid_layout.addWidget(card)
             self.cards.append(card)
 
     def show_new_options(self):
+        """Present user with different OTP adding options."""
         options = [
             "Enter Secret Key",
             "Enter Key URI",
@@ -291,6 +290,7 @@ class Virex(QMainWindow):
             self.import_qr_image()
 
     def prompt_secret_key(self):
+        """Prompt user to manually enter a Base32 secret key and account name."""
         popup = NewPopup("Enter secret key (Base32):", "Secret Key Entry")
         if popup.exec() == QInputDialog.Accepted:
             secret = popup.textValue().strip()
@@ -306,6 +306,7 @@ class Virex(QMainWindow):
                         self.refresh_tiles()
 
     def prompt_key_uri(self):
+        """Prompt user to enter a full otpauth URI and account name."""
         popup = NewPopup("Enter the Key URI (otpauth URI):", "Key URI Entry")
         if popup.exec() == QInputDialog.Accepted:
             key_uri = popup.textValue().strip()
@@ -321,6 +322,7 @@ class Virex(QMainWindow):
                         self.refresh_tiles()
 
     def import_csv(self):
+        """Import OTP accounts from a CSV file with account and secret or URI."""
         filename, _ = QFileDialog.getOpenFileName(
             self, "Import OTP Entries from CSV", "", "CSV Files (*.csv)"
         )
@@ -352,6 +354,7 @@ class Virex(QMainWindow):
                 )
 
     def scan_qr_code_camera(self):
+        """Open the camera to scan a QR code and decode the OTP data."""
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             QMessageBox.warning(self, "Camera Error", "Could not open camera.")
@@ -382,6 +385,7 @@ class Virex(QMainWindow):
             QMessageBox.warning(self, "Scan Failed", "No QR code detected.")
 
     def import_qr_image(self):
+        """Import a QR code image file and decode the OTP data from it."""
         filename, _ = QFileDialog.getOpenFileName(
             self, "Import QR Code Image", "", "Image Files (*.png *.jpg *.bmp)"
         )
@@ -401,6 +405,7 @@ class Virex(QMainWindow):
             QMessageBox.warning(self, "Error", f"Failed to decode QR code:\n{e}")
 
     def process_decoded_qr_data(self, data):
+        """Add a decoded secret or URI OTP data after prompting for account name."""
         if data.startswith("otpauth://"):
             popup_name = NewPopup(
                 "Enter account name for scanned Key URI:", "Account Name Entry"
