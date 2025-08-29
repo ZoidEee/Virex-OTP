@@ -162,6 +162,7 @@ class OtpCard(QWidget):
         main_layout.addWidget(self.countdown_circle)
 
         self.toggle_button = QPushButton()
+        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_button.setStyleSheet("background-color: transparent; border: none;")
         icon_hide = QIcon("images/hide-24.png")
         icon_show = QIcon("images/show-24.png")
@@ -176,6 +177,7 @@ class OtpCard(QWidget):
         main_layout.addWidget(self.toggle_button)
 
         self.copy_button = QPushButton()
+        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.copy_button.setStyleSheet("background-color: transparent; border: none;")
         icon_copy = QIcon("images/copy-24.png")
         self.copy_button.setIcon(icon_copy)
@@ -246,6 +248,7 @@ class Virex(QMainWindow):
     def setup_mainwindow(self):
         """Set up the main window layout with buttons and search bar."""
         btn_new = QPushButton()
+        btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_new.setStyleSheet("background-color: transparent; border: none;")
         icon_new = QIcon("images/plus-50.png")
         btn_new.setIcon(icon_new)
@@ -256,6 +259,7 @@ class Virex(QMainWindow):
         search_bar = QLineEdit()
         search_bar.setPlaceholderText("Search...")
         btn_settings = QPushButton()
+        btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_settings.setStyleSheet("background-color: transparent; border: none;")
         icon_settings = QIcon("images/settings-50.png")
         btn_settings.setIcon(icon_settings)
