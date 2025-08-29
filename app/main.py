@@ -2,6 +2,7 @@ import sys
 import time
 from urllib.parse import unquote, urlparse
 
+import csv
 import cv2
 import pyotp
 from PySide6.QtCore import Qt, QTimer, QRect, QSize
@@ -257,12 +258,15 @@ class Virex(QMainWindow):
         btn_new.clicked.connect(self.show_new_options)
 
         search_bar = QLineEdit()
+        self.search_bar = search_bar
         search_bar.setPlaceholderText("Search...")
+        search_bar.textChanged.connect(self.filter_cards)
         btn_settings = QPushButton()
         btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_settings.setStyleSheet("background-color: transparent; border: none;")
         icon_settings = QIcon("images/settings-50.png")
         btn_settings.setIcon(icon_settings)
+        btn_settings.clicked.connect(self.show_settings_options)
         btn_settings.setIconSize(QSize(20, 20))
         btn_settings.setFixedSize(25, 25)
 
@@ -324,12 +328,15 @@ class Virex(QMainWindow):
             self.grid_layout.addWidget(card)
             self.cards.append(card)
 
+        if hasattr(self, "search_bar"):
+            self.filter_cards(self.search_bar.text())
+
     def show_new_options(self):
         """Present user with different OTP adding options."""
         options = [
             "Enter Secret Key",
             "Enter Key URI",
-            "Import from CSV",
+            "Import from CSV file",
             "Scan QR Code with Camera",
             "Import QR Code Image",
         ]
@@ -343,7 +350,7 @@ class Virex(QMainWindow):
             self.prompt_secret_key()
         elif option == "Enter Key URI":
             self.prompt_key_uri()
-        elif option == "Import from CSV":
+        elif option == "Import from CSV file":
             self.import_csv()
         elif option == "Scan QR Code with Camera":
             self.scan_qr_code_camera()
@@ -389,26 +396,27 @@ class Virex(QMainWindow):
         )
         if filename:
             try:
-                with open(filename, "r") as f:
-                    lines = f.readlines()
-                for line in lines:
-                    parts = line.strip().split(",")
-                    if len(parts) >= 2:
-                        account_name = parts[0].strip()
-                        secret_or_uri = parts[1].strip()
-                        if secret_or_uri.startswith("otpauth://"):
-                            self.accounts.append(
-                                {"name": account_name, "key_uri": secret_or_uri}
-                            )
-                        else:
-                            self.accounts.append(
-                                {"name": account_name, "secret": secret_or_uri}
-                            )
-                save_accounts(self.accounts)
-                self.refresh_tiles()
-                QMessageBox.information(
-                    self, "Import Successful", "OTP accounts imported successfully!"
-                )
+                imported_count = 0
+                with open(filename, "r", newline="", encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if len(row) >= 2:
+                            account_name, secret_or_uri = row[0].strip(), row[1].strip()
+                            if not account_name or not secret_or_uri:
+                                continue
+                            if secret_or_uri.startswith("otpauth://"):
+                                self.accounts.append({"name": account_name, "key_uri": secret_or_uri})
+                            else:
+                                self.accounts.append({"name": account_name, "secret": secret_or_uri})
+                            imported_count += 1
+                if imported_count > 0:
+                    save_accounts(self.accounts)
+                    self.refresh_tiles()
+                    QMessageBox.information(
+                        self, "Import Successful", f"{imported_count} accounts imported successfully!"
+                    )
+                else:
+                    QMessageBox.information(self, "Import", "No new accounts found in file.")
             except Exception as e:
                 QMessageBox.warning(
                     self, "Import Failed", f"Failed to import CSV file:\n{e}"
@@ -487,6 +495,53 @@ class Virex(QMainWindow):
                     self.accounts.append({"name": account_name, "secret": data})
                     save_accounts(self.accounts)
                     self.refresh_tiles()
+
+    def show_settings_options(self):
+        """Present user with different settings options."""
+        options = [
+            "Export Accounts to CSV",
+        ]
+        option, ok = QInputDialog.getItem(
+            self, "Settings", "Choose an option:", options, 0, False
+        )
+        if not ok:
+            return
+
+        if option == "Export Accounts to CSV":
+            self.export_accounts_csv()
+
+    def export_accounts_csv(self):
+        """Export current OTP accounts to a CSV file."""
+        if not self.accounts:
+            QMessageBox.information(self, "Export", "No accounts to export.")
+            return
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export OTP Entries to CSV", "", "CSV Files (*.csv)"
+        )
+        if filename:
+            try:
+                with open(filename, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    for account in self.accounts:
+                        name = account.get("name", "Unknown")
+                        secret_or_uri = account.get("key_uri") or account.get("secret", "")
+                        if secret_or_uri:
+                            writer.writerow([name, secret_or_uri])
+                QMessageBox.information(
+                    self, "Export Successful", "OTP accounts exported successfully!"
+                )
+            except Exception as e:
+                QMessageBox.warning(self, "Export Failed", f"Failed to export to CSV file:\n{e}")
+
+    def filter_cards(self, text):
+        """Filter displayed OTP cards based on search text."""
+        search_text = text.lower()
+        for card in self.cards:
+            if search_text in card.account_name.lower() or search_text in card.user.lower():
+                card.show()
+            else:
+                card.hide()
 
 
 if __name__ == "__main__":
