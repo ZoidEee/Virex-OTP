@@ -25,7 +25,7 @@ app/
 
 1. Clone the repository:
 
-    git clone https://github.com/ZoidEEE/Virex-OTP.git
+    git clone https://github.com/ZoidEee/Virex-OTP.git
 
 2. Navigate to the `app` directory:
 
