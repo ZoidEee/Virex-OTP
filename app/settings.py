@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -9,7 +10,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QComboBox,
-    QSpinBox,
     QMessageBox,
 )
 from PySide6.QtGui import QIntValidator
@@ -39,9 +39,22 @@ def save_settings(settings):
     """Save settings to config file."""
     try:
         with open(CONFIG_PATH, "w") as f:
-            json.dump(settings, f, indent=2)
+            json.dump(settings, f)
     except Exception:
         pass
+
+
+def is_strong_password(pw):
+    """Check password strength: min 8 chars, upper, lower, digit."""
+    if len(pw) < 8:
+        return False
+    if not re.search(r"[A-Z]", pw):
+        return False
+    if not re.search(r"[a-z]", pw):
+        return False
+    if not re.search(r"\d", pw):
+        return False
+    return True
 
 
 class SettingsDialog(QDialog):
@@ -55,14 +68,18 @@ class SettingsDialog(QDialog):
         self.backup_requested = False
         self.restore_requested = False
         self.reset_requested = False
+        self.encrypted_backup_requested = False
+        self.encrypted_restore_requested = False
         self.init_ui()
         self.load_settings()
         self.apply_theme()
 
     def init_ui(self):
+        """Initialize the settings dialog UI."""
         layout = QVBoxLayout()
         layout.setSpacing(16)
         layout.setContentsMargins(24, 24, 24, 24)
+
         layout.addWidget(QLabel("Change Master Password"))
         self.old_pw = QLineEdit()
         self.old_pw.setEchoMode(QLineEdit.EchoMode.Password)
@@ -76,28 +93,33 @@ class SettingsDialog(QDialog):
         self.conf_pw.setEchoMode(QLineEdit.EchoMode.Password)
         self.conf_pw.setPlaceholderText("Confirm new master password")
         layout.addWidget(self.conf_pw)
+
         layout.addSpacing(12)
         layout.addWidget(QLabel("Auto-lock timeout (minutes, 0 to disable)"))
         self.autolock_edit = QLineEdit()
         self.autolock_edit.setValidator(QIntValidator(0, 120))
         self.autolock_edit.setPlaceholderText("0")
         layout.addWidget(self.autolock_edit)
+
         layout.addSpacing(8)
         layout.addWidget(QLabel("Clipboard clear timeout (seconds, 0 to disable)"))
         self.clipboard_edit = QLineEdit()
         self.clipboard_edit.setValidator(QIntValidator(0, 120))
         self.clipboard_edit.setPlaceholderText("0")
         layout.addWidget(self.clipboard_edit)
+
         layout.addSpacing(8)
         layout.addWidget(QLabel("Default OTP Display Mode"))
         self.otp_display_combo = QComboBox()
         self.otp_display_combo.addItems(["Show Codes", "Hide Codes"])
         layout.addWidget(self.otp_display_combo)
+
         layout.addSpacing(8)
         layout.addWidget(QLabel("Theme"))
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["System Default", "Light", "Dark"])
         layout.addWidget(self.theme_combo)
+
         layout.addSpacing(16)
         br_layout = QHBoxLayout()
         br_layout.setSpacing(12)
@@ -105,10 +127,20 @@ class SettingsDialog(QDialog):
         self.restore_btn = QPushButton("Restore Accounts")
         br_layout.addWidget(self.backup_btn)
         br_layout.addWidget(self.restore_btn)
+
+        self.enc_backup_btn = QPushButton("Encrypted Backup")
+        self.enc_restore_btn = QPushButton("Encrypted Restore")
+        br_layout.addWidget(self.enc_backup_btn)
+        br_layout.addWidget(self.enc_restore_btn)
+        self.enc_backup_btn.clicked.connect(self.on_enc_backup)
+        self.enc_restore_btn.clicked.connect(self.on_enc_restore)
+
         layout.addLayout(br_layout)
+
         layout.addSpacing(8)
         self.reset_btn = QPushButton("Reset All Data")
         layout.addWidget(self.reset_btn)
+
         layout.addSpacing(16)
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
@@ -117,6 +149,7 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(self.save_btn)
         btn_layout.addWidget(self.cancel_btn)
         layout.addLayout(btn_layout)
+
         self.setLayout(layout)
         self.save_btn.clicked.connect(self.on_save)
         self.cancel_btn.clicked.connect(self.reject)
@@ -125,6 +158,7 @@ class SettingsDialog(QDialog):
         self.reset_btn.clicked.connect(self.on_reset)
 
     def load_settings(self):
+        """Load current settings into the dialog fields."""
         s = self.current_settings
         self.autolock_edit.setText(str(s.get("auto_lock_timeout", 0)))
         self.clipboard_edit.setText(str(s.get("clipboard_clear_timeout", 0)))
@@ -135,41 +169,53 @@ class SettingsDialog(QDialog):
         self.theme_combo.setCurrentIndex(idx)
 
     def apply_theme(self):
+        """Apply the selected theme to the dialog."""
         theme = get_theme(self.current_settings.get("theme", "system"))
         apply_palette(theme)
         self.setStyleSheet(get_stylesheet(theme))
 
     def on_save(self):
+        """Handle saving settings and password change."""
         old_pw = self.old_pw.text().strip()
         new_pw = self.new_pw.text().strip()
         conf_pw = self.conf_pw.text().strip()
         if old_pw or new_pw or conf_pw:
             if not old_pw or not new_pw or not conf_pw:
                 QMessageBox.warning(
-                    self,
-                    "Input Error",
-                    "Please fill all password fields to change the password.",
+                    self, "Error", "Fill all password fields to change password."
                 )
                 return
             if new_pw != conf_pw:
+                QMessageBox.warning(self, "Error", "New passwords do not match.")
+                return
+            if not is_strong_password(new_pw):
                 QMessageBox.warning(
-                    self, "Input Error", "New password and confirmation do not match."
+                    self,
+                    "Weak Password",
+                    "Password must be at least 8 characters and include upper, lower, and digit.",
                 )
                 return
             self.current_settings["pending_old_master_pw"] = old_pw
             self.current_settings["pending_new_master_pw"] = new_pw
+
         try:
-            self.current_settings["auto_lock_timeout"] = int(
-                self.autolock_edit.text() or "0"
-            )
+            auto_lock = int(self.autolock_edit.text())
+            if auto_lock < 0 or auto_lock > 120:
+                raise ValueError
+            self.current_settings["auto_lock_timeout"] = auto_lock
         except ValueError:
-            self.current_settings["auto_lock_timeout"] = 0
+            QMessageBox.warning(self, "Error", "Auto-lock timeout must be 0-120.")
+            return
+
         try:
-            self.current_settings["clipboard_clear_timeout"] = int(
-                self.clipboard_edit.text() or "0"
-            )
+            clipboard_timeout = int(self.clipboard_edit.text())
+            if clipboard_timeout < 0 or clipboard_timeout > 120:
+                raise ValueError
+            self.current_settings["clipboard_clear_timeout"] = clipboard_timeout
         except ValueError:
-            self.current_settings["clipboard_clear_timeout"] = 0
+            QMessageBox.warning(self, "Error", "Clipboard timeout must be 0-120.")
+            return
+
         self.current_settings["otp_display_mode"] = (
             "show" if self.otp_display_combo.currentIndex() == 0 else "hide"
         )
@@ -179,14 +225,17 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def on_backup(self):
+        """Trigger backup request (handled in main window)."""
         self.backup_requested = True
         self.accept()
 
     def on_restore(self):
+        """Trigger restore request (handled in main window)."""
         self.restore_requested = True
         self.accept()
 
     def on_reset(self):
+        """Confirm and trigger reset of all data."""
         res = QMessageBox.question(
             self,
             "Confirm Reset",
@@ -196,3 +245,11 @@ class SettingsDialog(QDialog):
         if res == QMessageBox.StandardButton.Yes:
             self.reset_requested = True
             self.accept()
+
+    def on_enc_backup(self):
+        self.encrypted_backup_requested = True
+        self.accept()
+
+    def on_enc_restore(self):
+        self.encrypted_restore_requested = True
+        self.accept()

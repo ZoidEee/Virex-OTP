@@ -2,7 +2,7 @@ import sys
 import time
 import cv2
 import pyotp
-from PySide6.QtCore import Qt, QTimer, QRect, QSize
+from PySide6.QtCore import Qt, QTimer, QRect, QSize, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +40,8 @@ from app.helpers import (
     export_accounts_csv,
     import_accounts_csv,
     process_decoded_qr_data,
+    export_accounts_encrypted,
+    import_accounts_encrypted,
 )
 
 
@@ -85,8 +87,31 @@ class CircularCountdown(QWidget):
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self.value}")
 
 
+class OptionsDialog(QDialog):
+    """Dialog for account options: Edit and Delete."""
+
+    def __init__(self, account_name, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Options for {account_name}")
+        self.setMinimumSize(220, 120)
+        layout = QVBoxLayout()
+        self.edit_btn = QPushButton("Edit")
+        self.delete_btn = QPushButton("Delete")
+        self.cancel_btn = QPushButton("Cancel")
+        layout.addWidget(self.edit_btn)
+        layout.addWidget(self.delete_btn)
+        layout.addWidget(self.cancel_btn)
+        self.setLayout(layout)
+        self.edit_btn.clicked.connect(self.accept)
+        self.delete_btn.clicked.connect(self.reject)
+        self.cancel_btn.clicked.connect(self.close)
+
+
 class OtpCard(QWidget):
     """Widget for displaying an OTP account."""
+
+    edit_requested = Signal(object)  # Emits self
+    delete_requested = Signal(object)  # Emits self
 
     def __init__(
         self, account_name, user, totp, interval=30, parent=None, icon_set="light"
@@ -97,14 +122,13 @@ class OtpCard(QWidget):
         self.totp = totp
         self.interval = interval
         self.code_hidden = False
-        self.setFixedSize(300, 75)
+        self.setFixedSize(300, 100)
         self.icon_set = icon_set
         self.init_ui()
         self.setStyleSheet(
             """
             #frame {
                 border-top: 1px solid #E0E0E0;
-                border-bottom: 1px solid #E0E0E0;
             }
             #label_account, #label_user, #label_current {
                 background-color: transparent;
@@ -132,14 +156,13 @@ class OtpCard(QWidget):
     def init_ui(self):
         self.frame = QFrame(self)
         self.frame.setObjectName("frame")
-        self.frame.setFixedSize(300, 75)
+        self.frame.setFixedSize(300, 100)
         main_layout = QHBoxLayout(self.frame)
-        main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 0, 10, 0)
-        sub_layout = QVBoxLayout()
-        sub_layout.setContentsMargins(0, 0, 0, 5)
-        sub_layout.setSpacing(0)
-        sub_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        info_layout = QVBoxLayout()
+        info_layout.setContentsMargins(0, 0, 0, 5)
+        info_layout.setSpacing(0)
+        info_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.label_account = QLabel(self.account_name)
         self.label_account.setObjectName("label_account")
         self.label_account.setFixedHeight(25)
@@ -155,12 +178,33 @@ class OtpCard(QWidget):
         self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_current.setFixedHeight(25)
         self.label_current.setFont(QFont("Times", 15))
-        sub_layout.addWidget(self.label_account)
-        sub_layout.addWidget(self.label_user)
-        sub_layout.addWidget(self.label_current)
-        main_layout.addLayout(sub_layout)
+        info_layout.addWidget(self.label_account)
+        info_layout.addWidget(self.label_user)
+        info_layout.addWidget(self.label_current)
+        main_layout.addLayout(info_layout)
         self.countdown_circle = CircularCountdown(self.interval)
         main_layout.addWidget(self.countdown_circle)
+        functions_layout = QVBoxLayout()
+        functions_layout.setContentsMargins(0, 0, 0, 0)
+        functions_layout.setSpacing(0)
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.options_button = QPushButton()
+        self.options_button.setStyleSheet(
+            "border: none; background-color: transparent;"
+        )
+        self.options_button.setObjectName("options_button")
+        self.options_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.options_button.setIcon(QIcon(f"images/{self.icon_set}-options-16.png"))
+        self.options_button.setIconSize(QSize(20, 20))
+        self.options_button.setFixedSize(30, 30)
+        self.options_button.clicked.connect(self.show_options_dialog)
+        top_layout.addWidget(self.options_button)
+        functions_layout.addLayout(top_layout)
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bottom_layout.setContentsMargins(0, 0, 0, 15)
         self.toggle_button = QPushButton()
         self.toggle_button.setObjectName("toggle_button")
         self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -168,20 +212,30 @@ class OtpCard(QWidget):
         icon_show = QIcon(f"images/{self.icon_set}-show-24.png")
         self.toggle_button.setIcon(icon_hide)
         self.toggle_button.setIconSize(QSize(20, 20))
-        self.toggle_button.setFixedSize(25, 25)
+        self.toggle_button.setFixedSize(30, 30)
         self.toggle_button.clicked.connect(self.toggle_code_visibility)
         self.icon_hide = icon_hide
         self.icon_show = icon_show
-        main_layout.addWidget(self.toggle_button)
+        bottom_layout.addWidget(self.toggle_button)
         self.copy_button = QPushButton()
         self.copy_button.setObjectName("copy_button")
         self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
         icon_copy = QIcon(f"images/{self.icon_set}-copy-24.png")
         self.copy_button.setIcon(icon_copy)
         self.copy_button.setIconSize(QSize(20, 20))
-        self.copy_button.setFixedSize(25, 25)
+        self.copy_button.setFixedSize(30, 30)
         self.copy_button.clicked.connect(self.copy_to_clipboard)
-        main_layout.addWidget(self.copy_button)
+        bottom_layout.addWidget(self.copy_button)
+        functions_layout.addLayout(bottom_layout)
+        main_layout.addLayout(functions_layout)
+
+    def show_options_dialog(self):
+        dlg = OptionsDialog(self.account_name, self)
+        result = dlg.exec()
+        if result == QDialog.DialogCode.Accepted:
+            self.edit_requested.emit(self)
+        elif result == QDialog.DialogCode.Rejected:
+            self.delete_requested.emit(self)
 
     def toggle_code_visibility(self):
         if self.code_hidden:
@@ -211,6 +265,7 @@ class OtpCard(QWidget):
 
     def update_icons(self, icon_set):
         self.icon_set = icon_set
+        self.options_button.setIcon(QIcon(f"images/{self.icon_set}-options-16.png"))
         self.icon_hide = QIcon(f"images/{self.icon_set}-hide-24.png")
         self.icon_show = QIcon(f"images/{self.icon_set}-show-24.png")
         self.toggle_button.setIcon(
@@ -237,6 +292,8 @@ class Virex(QMainWindow):
         self.cards = []
         self.settings = load_settings()
         self.clipboard_clear_timer = None
+        self.auto_lock_timer = None
+        self.setup_auto_lock()
         self.apply_theme()
         self.init_ui()
         clip_timeout = self.settings.get("clipboard_clear_timeout", 0)
@@ -254,7 +311,7 @@ class Virex(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("Virex")
-        self.setFixedSize(350, 500)
+        self.setFixedSize(350, 550)
         self.setup_mainwindow()
         self.refresh_tiles()
 
@@ -283,7 +340,7 @@ class Virex(QMainWindow):
         top_layout.addWidget(self.btn_settings)
         self.grid_layout = QVBoxLayout()
         self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.grid_layout.setSpacing(5)
+        self.grid_layout.setSpacing(2)
         scroll_area = QScrollArea()
         container = QWidget()
         container.setLayout(self.grid_layout)
@@ -312,17 +369,65 @@ class Virex(QMainWindow):
                 user = ""
                 totp = pyotp.TOTP(account.get("secret", ""))
             card = OtpCard(acc_name, user, totp, icon_set=self.icon_set)
+            card.edit_requested.connect(self.edit_account)
+            card.delete_requested.connect(self.delete_account)
             self.grid_layout.addWidget(card)
             self.cards.append(card)
         if hasattr(self, "search_bar"):
             self.filter_cards(self.search_bar.text())
-        for card in self.cards:
-            if self.settings.get("otp_display_mode", "show") == "hide":
-                if not card.code_hidden:
-                    card.toggle_code_visibility()
-            else:
-                if card.code_hidden:
-                    card.toggle_code_visibility()
+
+    def edit_account(self, card):
+        idx = self.cards.index(card)
+        account = self.accounts[idx]
+        name, ok = QInputDialog.getText(
+            self, "Edit Account Name", "Account Name:", text=account.get("name", "")
+        )
+        if ok and name:
+            account["name"] = name
+            save_accounts(self.accounts)
+            self.refresh_tiles()
+
+    def delete_account(self, card):
+        idx = self.cards.index(card)
+        res = QMessageBox.question(
+            self, "Delete Account", "Are you sure?", QMessageBox.Yes | QMessageBox.No
+        )
+        if res == QMessageBox.Yes:
+            self.accounts.pop(idx)
+            save_accounts(self.accounts)
+            self.refresh_tiles()
+
+    def setup_auto_lock(self):
+        """Setup auto-lock timer based on settings."""
+        timeout = self.settings.get("auto_lock_timeout", 0)
+        if timeout > 0:
+            if self.auto_lock_timer:
+                self.auto_lock_timer.stop()
+            self.auto_lock_timer = QTimer(self)
+            self.auto_lock_timer.timeout.connect(self.lock_app)
+            self.auto_lock_timer.start(timeout * 60 * 1000)
+            self.installEventFilter(self)
+        else:
+            if self.auto_lock_timer:
+                self.auto_lock_timer.stop()
+                self.auto_lock_timer = None
+
+    def eventFilter(self, obj, event):
+        """Reset auto-lock timer on user activity."""
+        if self.auto_lock_timer and event.type() in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]:
+            self.auto_lock_timer.start(
+                self.settings.get("auto_lock_timeout", 0) * 60 * 1000
+            )
+        return super().eventFilter(obj, event)
+
+    def lock_app(self):
+        """Lock the app and prompt for master password."""
+        pw = prompt_for_password()
+        if not check_master_password(pw):
+            QMessageBox.warning(self, "Locked", "Incorrect password. Exiting.")
+            QApplication.quit()
+        else:
+            self.master_pw = pw
 
     def show_settings_options(self):
         dlg = SettingsDialog(self.settings, self)
@@ -339,10 +444,13 @@ class Virex(QMainWindow):
                 self.master_pw = self.settings["pending_new_master_pw"]
                 self.settings.pop("pending_new_master_pw", None)
                 self.settings.pop("pending_old_master_pw", None)
+                QMessageBox.information(
+                    self, "Password Changed", "Master password changed successfully!"
+                )
             clip_timeout = self.settings.get("clipboard_clear_timeout", 0)
+            self.setup_auto_lock()
             if self.clipboard_clear_timer:
                 self.clipboard_clear_timer.stop()
-                self.clipboard_clear_timer = None
             if clip_timeout > 0:
                 self.clipboard_clear_timer = QTimer(self)
                 self.clipboard_clear_timer.timeout.connect(self.clear_clipboard)
@@ -351,9 +459,12 @@ class Virex(QMainWindow):
                 self.export_accounts_csv()
             if getattr(dlg, "restore_requested", False):
                 self.import_csv()
+            if getattr(dlg, "encrypted_backup_requested", False):
+                self.export_accounts_encrypted()
+            if getattr(dlg, "encrypted_restore_requested", False):
+                self.import_accounts_encrypted()
             if getattr(dlg, "reset_requested", False):
                 self.reset_all_data()
-                self.apply_theme()
             self.save_settings()
             self.apply_theme()
             self.refresh_tiles()
@@ -472,36 +583,6 @@ class Virex(QMainWindow):
         elif option == "Import QR Code Image":
             self.import_qr_image()
 
-    def prompt_secret_key(self):
-        popup = NewPopup("Enter secret key (Base32):", "Secret Key Entry")
-        if popup.exec() == QInputDialog.DialogCode.Accepted:
-            secret = popup.textValue().strip()
-            if secret:
-                popup_name = NewPopup(
-                    "Enter account name for this secret:", "Account Name Entry"
-                )
-                if popup_name.exec() == QInputDialog.DialogCode.Accepted:
-                    account_name = popup_name.textValue().strip()
-                    if account_name:
-                        self.accounts.append({"name": account_name, "secret": secret})
-                        save_accounts(self.accounts)
-                        self.refresh_tiles()
-
-    def prompt_key_uri(self):
-        popup = NewPopup("Enter the Key URI (otpauth URI):", "Key URI Entry")
-        if popup.exec() == QInputDialog.DialogCode.Accepted:
-            key_uri = popup.textValue().strip()
-            if key_uri:
-                popup_name = NewPopup(
-                    "Enter account name for this Key URI:", "Account Name Entry"
-                )
-                if popup_name.exec() == QInputDialog.DialogCode.Accepted:
-                    account_name = popup_name.textValue().strip()
-                    if account_name:
-                        self.accounts.append({"name": account_name, "key_uri": key_uri})
-                        save_accounts(self.accounts)
-                        self.refresh_tiles()
-
     def scan_qr_code_camera(self):
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
@@ -564,6 +645,132 @@ class Virex(QMainWindow):
                 self.accounts.append(account_entry)
                 save_accounts(self.accounts)
                 self.refresh_tiles()
+
+    def edit_account(self, card):
+        idx = self.cards.index(card)
+        account = self.accounts[idx]
+        name, ok = QInputDialog.getText(
+            self, "Edit Account Name", "Account Name:", text=account.get("name", "")
+        )
+        if ok and name:
+            account["name"] = name
+            save_accounts(self.accounts)
+            self.refresh_tiles()
+
+    def delete_account(self, card):
+        idx = self.cards.index(card)
+        res = QMessageBox.question(
+            self, "Delete Account", "Are you sure?", QMessageBox.Yes | QMessageBox.No
+        )
+        if res == QMessageBox.Yes:
+            self.accounts.pop(idx)
+            save_accounts(self.accounts)
+            self.refresh_tiles()
+
+    def prompt_secret_key(self):
+        popup = NewPopup("Enter secret key (Base32):", "Secret Key Entry")
+        if popup.exec() == QInputDialog.DialogCode.Accepted:
+            secret = popup.textValue().strip()
+            # Account validation
+            if not secret or not pyotp.utils.is_base32(secret):
+                QMessageBox.warning(
+                    self, "Invalid Secret", "Secret must be valid Base32."
+                )
+                return
+            popup_name = NewPopup(
+                "Enter account name for this secret:", "Account Name Entry"
+            )
+            if popup_name.exec() == QInputDialog.DialogCode.Accepted:
+                account_name = popup_name.textValue().strip()
+                if account_name:
+                    self.accounts.append({"name": account_name, "secret": secret})
+                    save_accounts(self.accounts)
+                    self.refresh_tiles()
+
+    def prompt_key_uri(self):
+        popup = NewPopup("Enter the Key URI (otpauth URI):", "Key URI Entry")
+        if popup.exec() == QInputDialog.DialogCode.Accepted:
+            key_uri = popup.textValue().strip()
+            # Account validation
+            if not key_uri.startswith("otpauth://"):
+                QMessageBox.warning(
+                    self, "Invalid URI", "Key URI must start with otpauth://"
+                )
+                return
+            try:
+                pyotp.parse_uri(key_uri)
+            except Exception:
+                QMessageBox.warning(self, "Invalid URI", "Key URI is not valid.")
+                return
+            popup_name = NewPopup(
+                "Enter account name for this Key URI:", "Account Name Entry"
+            )
+            if popup_name.exec() == QInputDialog.DialogCode.Accepted:
+                account_name = popup_name.textValue().strip()
+                if account_name:
+                    self.accounts.append({"name": account_name, "key_uri": key_uri})
+                    save_accounts(self.accounts)
+                    self.refresh_tiles()
+
+    def export_accounts_encrypted(self):
+        if not self.accounts:
+            QMessageBox.information(self, "Export", "No accounts to export.")
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Encrypted OTP Entries", "", "Encrypted Files (*.bin)"
+        )
+        if filename:
+            pw, ok = QInputDialog.getText(
+                self,
+                "Backup Password",
+                "Enter password for encryption:",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok or not pw:
+                QMessageBox.warning(self, "Export Cancelled", "No password entered.")
+                return
+            success, error = export_accounts_encrypted(self.accounts, filename, pw)
+            if success:
+                QMessageBox.information(
+                    self, "Export Successful", "Accounts exported (encrypted)!"
+                )
+            else:
+                QMessageBox.warning(self, "Export Failed", f"Error:\n{error}")
+
+    def import_accounts_encrypted(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import Encrypted OTP Entries", "", "Encrypted Files (*.bin)"
+        )
+        if filename:
+            pw, ok = QInputDialog.getText(
+                self,
+                "Restore Password",
+                "Enter password for decryption:",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok or not pw:
+                QMessageBox.warning(self, "Import Cancelled", "No password entered.")
+                return
+            imported_accounts, error = import_accounts_encrypted(filename, pw)
+            if error:
+                QMessageBox.warning(self, "Import Failed", f"Error:\n{error}")
+                return
+            imported_count = 0
+            for account in imported_accounts:
+                self.accounts.append(account)
+                imported_count += 1
+            if imported_count > 0:
+                save_accounts(self.accounts)
+                self.refresh_tiles()
+                QMessageBox.information(
+                    self, "Import Successful", f"{imported_count} accounts imported!"
+                )
+            else:
+                QMessageBox.information(self, "Import", "No new accounts found.")
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

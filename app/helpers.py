@@ -136,3 +136,35 @@ def process_decoded_qr_data(data):
     if data.startswith("otpauth://"):
         return {"key_uri": data}
     return {"secret": data}
+
+
+def generate_backup_key(password):
+    """Generate a Fernet key from a password."""
+    return base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
+
+
+def export_accounts_encrypted(accounts, filename, password):
+    """Export accounts to an encrypted file."""
+    try:
+        key = generate_backup_key(password)
+        f = Fernet(key)
+        data = json.dumps(accounts).encode()
+        encrypted = f.encrypt(data)
+        with open(filename, "wb") as file:
+            file.write(encrypted)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def import_accounts_encrypted(filename, password):
+    """Import accounts from an encrypted file."""
+    try:
+        key = generate_backup_key(password)
+        f = Fernet(key)
+        with open(filename, "rb") as file:
+            encrypted = file.read()
+        data = f.decrypt(encrypted)
+        return json.loads(data), None
+    except Exception as e:
+        return [], str(e)
