@@ -9,8 +9,8 @@ from cryptography.fernet import Fernet, InvalidToken
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QApplication
 
-ORG_NAME = "YourOrg"
-APP_NAME = "OTPApp"
+ORG_NAME = "Virex"
+APP_NAME = "VirexOTP"
 ACCOUNTS_FILE = "accounts.json"
 
 
@@ -58,7 +58,7 @@ def prompt_for_password():
         QMessageBox.warning(None, "Error", "Incorrect password!")
 
 
-def generate_storage_key(password):
+def _generate_fernet_key(password):
     """Generate a Fernet key from a password for storage encryption."""
     return base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
 
@@ -66,7 +66,7 @@ def generate_storage_key(password):
 def save_accounts(accounts, master_pw):
     """Encrypt and save accounts to file."""
     try:
-        key = generate_storage_key(master_pw)
+        key = _generate_fernet_key(master_pw)
         f = Fernet(key)
         data = json.dumps(accounts).encode()
         encrypted_data = f.encrypt(data)
@@ -80,7 +80,7 @@ def load_accounts(master_pw):
     """Load and decrypt accounts from file."""
     if os.path.exists(ACCOUNTS_FILE):
         try:
-            key = generate_storage_key(master_pw)
+            key = _generate_fernet_key(master_pw)
             f = Fernet(key)
             with open(ACCOUNTS_FILE, "rb") as file:
                 encrypted_data = file.read()
@@ -126,41 +126,34 @@ def clear_clipboard():
 
 def export_accounts_csv(accounts, filename):
     """Export accounts to a CSV file."""
-    try:
-        with open(filename, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            for account in accounts:
-                name = account.get("name", "Unknown")
-                secret_or_uri = account.get("key_uri") or account.get("secret", "")
-                if secret_or_uri:
-                    writer.writerow([name, secret_or_uri])
-        return True, None
-    except Exception as e:
-        return False, str(e)
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        for account in accounts:
+            name = account.get("name", "Unknown")
+            secret_or_uri = account.get("key_uri") or account.get("secret", "")
+            if secret_or_uri:
+                writer.writerow([name, secret_or_uri])
 
 
 def import_accounts_csv(filename):
     """Import accounts from a CSV file."""
     imported_accounts = []
-    try:
-        with open(filename, "r", newline="", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) >= 2:
-                    account_name, secret_or_uri = row[0].strip(), row[1].strip()
-                    if not account_name or not secret_or_uri:
-                        continue
-                    if secret_or_uri.startswith("otpauth://"):
-                        imported_accounts.append(
-                            {"name": account_name, "key_uri": secret_or_uri}
-                        )
-                    else:
-                        imported_accounts.append(
-                            {"name": account_name, "secret": secret_or_uri}
-                        )
-        return imported_accounts, None
-    except Exception as e:
-        return [], str(e)
+    with open(filename, "r", newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) >= 2:
+                account_name, secret_or_uri = row[0].strip(), row[1].strip()
+                if not account_name or not secret_or_uri:
+                    continue
+                if secret_or_uri.startswith("otpauth://"):
+                    imported_accounts.append(
+                        {"name": account_name, "key_uri": secret_or_uri}
+                    )
+                else:
+                    imported_accounts.append(
+                        {"name": account_name, "secret": secret_or_uri}
+                    )
+    return imported_accounts
 
 
 def process_decoded_qr_data(data):
@@ -170,33 +163,21 @@ def process_decoded_qr_data(data):
     return {"secret": data}
 
 
-def generate_backup_key(password):
-    """Generate a Fernet key from a password."""
-    return base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
-
-
 def export_accounts_encrypted(accounts, filename, password):
     """Export accounts to an encrypted file."""
-    try:
-        key = generate_backup_key(password)
-        f = Fernet(key)
-        data = json.dumps(accounts).encode()
-        encrypted = f.encrypt(data)
-        with open(filename, "wb") as file:
-            file.write(encrypted)
-        return True, None
-    except Exception as e:
-        return False, str(e)
+    key = _generate_fernet_key(password)
+    f = Fernet(key)
+    data = json.dumps(accounts).encode()
+    encrypted = f.encrypt(data)
+    with open(filename, "wb") as file:
+        file.write(encrypted)
 
 
 def import_accounts_encrypted(filename, password):
     """Import accounts from an encrypted file."""
-    try:
-        key = generate_backup_key(password)
-        f = Fernet(key)
-        with open(filename, "rb") as file:
-            encrypted = file.read()
-        data = f.decrypt(encrypted)
-        return json.loads(data), None
-    except Exception as e:
-        return [], str(e)
+    key = _generate_fernet_key(password)
+    f = Fernet(key)
+    with open(filename, "rb") as file:
+        encrypted = file.read()
+    data = f.decrypt(encrypted)
+    return json.loads(data)

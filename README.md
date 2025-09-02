@@ -1,15 +1,15 @@
 # Virex-OTP
 
-A Python desktop application for managing OTP (One-Time Password) accounts using PySide6.
+A secure, modern, and cross-platform desktop application for managing your Two-Factor Authentication (2FA) accounts, built with Python and PySide6.
+
 
 ## Features
 
-- Secure master password protection (accounts are encrypted at rest)
-- Add OTP accounts via secret key, otpauth URI, CSV import, or QR code (camera/image)
-- Export/import accounts to/from CSV
-- Auto-lock and clipboard clear timeout settings
-- Light/dark/system theme support
-- Responsive, modern UI
+- **Secure Storage**: All your OTP secrets are encrypted at rest using a master password you control.
+- **Multiple Import Options**: Add accounts via secret key, `otpauth://` URI, QR code scanning (from camera or image file), and bulk import from a CSV file.
+- **Flexible Data Management**: Easily export your accounts to an unencrypted CSV file for portability or to a secure, encrypted backup file for safekeeping.
+- **Customizable Security**: Enhance your security by setting an automatic application lock timer and a clipboard-clearing timeout.
+- **Modern UI**: A clean and intuitive user interface that automatically adapts to your system's light or dark theme.
 
 ## Project Structure
 ```
@@ -25,7 +25,8 @@ app/
 
 1. Clone the repository:
 
-   git clone <your-repo-url>
+    git clone https://github.com/ZoidEEE/Virex-OTP.git
+
 2. Navigate to the `app` directory:
 
    cd app

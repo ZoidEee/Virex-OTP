@@ -166,8 +166,6 @@ class SettingsDialog(QDialog):
                     "Password must be at least 8 characters and include upper, lower, and digit.",
                 )
                 return
-            self.current_settings["pending_old_master_pw"] = old_pw
-            self.current_settings["pending_new_master_pw"] = new_pw
 
         try:
             auto_lock = int(self.autolock_edit.text())

@@ -2,8 +2,8 @@ import sys
 import time
 import cv2
 import pyotp
-from PySide6.QtCore import Qt, QTimer, QRect, QSize, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QIcon
+from PySide6.QtCore import Qt, QTimer, QRect, QSize, Signal, QPoint
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -114,36 +114,14 @@ class OtpCard(QWidget):
     edit_requested = Signal(object)  # Emits self
     delete_requested = Signal(object)  # Emits self
 
-    def __init__(
-        self, account_name, user, totp, interval=30, parent=None, icon_set="light"
-    ):
+    def __init__(self, account, icon_set="light", start_hidden=False, parent=None):
         super().__init__(parent)
-        self.account_name = account_name
-        self.user = user
-        self.totp = totp
-        self.interval = interval
-        self.code_hidden = False
-        self.setFixedSize(300, 100)
         self.icon_set = icon_set
+        self.code_hidden = False  # Default state
         self.init_ui()
-        self.setStyleSheet(
-            """
-            #frame {
-                border-top: 1px solid #E0E0E0;
-            }
-            #label_account, #label_user, #label_current {
-                background-color: transparent;
-                border: none;
-            }
-            #label_current {
-                letter-spacing: 2px;
-            }
-            #toggle_button, #copy_button {
-                background-color: transparent;
-                border: none;
-            }
-            """
-        )
+        self.update_data(account)  # Populate UI with data
+
+        self.setFixedSize(300, 100)
         shadow = QGraphicsDropShadowEffect()
         shadow.setColor(QColor(100, 100, 100, 50))
         shadow.setBlurRadius(14)
@@ -152,6 +130,22 @@ class OtpCard(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_totp)
         self.timer.start(1000)
+        self.update_totp()
+        if start_hidden:
+            self.toggle_code_visibility()
+
+    def update_data(self, account):
+        """Update the card with new account data."""
+        if "key_uri" in account:
+            self.account_name, self.user = parse_account_label(account["key_uri"])
+            self.totp = pyotp.parse_uri(account["key_uri"])
+        else:
+            self.account_name = account.get("name", "Unknown")
+            self.user = ""
+            self.totp = pyotp.TOTP(account.get("secret", ""))
+        self.interval = self.totp.interval
+        self.label_account.setText(self.account_name)
+        self.label_user.setText(self.user)
         self.update_totp()
 
     def init_ui(self):
@@ -164,12 +158,12 @@ class OtpCard(QWidget):
         info_layout.setContentsMargins(0, 0, 0, 5)
         info_layout.setSpacing(0)
         info_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.label_account = QLabel(self.account_name)
+        self.label_account = QLabel("Account")
         self.label_account.setObjectName("label_account")
         self.label_account.setFixedHeight(25)
         self.label_account.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_account.setFont(QFont("Times", 12))
-        self.label_user = QLabel(self.user)
+        self.label_user = QLabel("User")
         self.label_user.setObjectName("label_user")
         self.label_user.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_user.setFixedHeight(25)
@@ -183,7 +177,7 @@ class OtpCard(QWidget):
         info_layout.addWidget(self.label_user)
         info_layout.addWidget(self.label_current)
         main_layout.addLayout(info_layout)
-        self.countdown_circle = CircularCountdown(self.interval)
+        self.countdown_circle = CircularCountdown(30)  # Default, will be updated
         main_layout.addWidget(self.countdown_circle)
         functions_layout = QVBoxLayout()
         functions_layout.setContentsMargins(0, 0, 0, 0)
@@ -283,6 +277,57 @@ class OtpCard(QWidget):
         clipboard.setText(current)
 
 
+class CameraScannerDialog(QDialog):
+    """Dialog for scanning QR codes using the camera."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Scan QR Code")
+        self.setMinimumSize(400, 300)
+        self.decoded_data = None
+
+        layout = QVBoxLayout()
+        self.camera_label = QLabel("Initializing camera...")
+        self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.camera_label)
+        self.setLayout(layout)
+
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            self.camera_label.setText("Could not open camera.")
+            return
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.next_frame)
+        self.timer.start(1000 // 30)  # ~30 FPS
+
+    def next_frame(self):
+        ret, frame = self.cap.read()
+        if not ret:
+            self.timer.stop()
+            return
+
+        # Convert to QImage
+        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_image.shape
+        bytes_per_line = ch * w
+        qt_image = QImage(
+            rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888
+        )
+        self.camera_label.setPixmap(QPixmap.fromImage(qt_image))
+
+        decoded_objs = decode(frame)
+        if decoded_objs:
+            self.decoded_data = decoded_objs[0].data.decode()
+            self.accept()
+
+    def closeEvent(self, event):
+        self.timer.stop()
+        if self.cap.isOpened():
+            self.cap.release()
+        super().closeEvent(event)
+
+
 class Virex(QMainWindow):
     """Main application window for Virex OTP."""
 
@@ -355,25 +400,33 @@ class Virex(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def refresh_tiles(self):
-        while self.grid_layout.count():
-            item = self.grid_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        self.cards.clear()
-        for account in self.accounts:
-            if "key_uri" in account:
-                acc_name, user = parse_account_label(account["key_uri"])
-                totp = pyotp.parse_uri(account["key_uri"])
+        num_accounts = len(self.accounts)
+        num_cards = len(self.cards)
+        start_hidden = self.settings.get("otp_display_mode") == "hide"
+
+        # Update or create cards
+        for i, account in enumerate(self.accounts):
+            if i < num_cards:
+                # Update existing card
+                card = self.cards[i]
+                card.update_data(account)
+                card.show()
             else:
-                acc_name = account.get("name", "Unknown")
-                user = ""
-                totp = pyotp.TOTP(account.get("secret", ""))
-            card = OtpCard(acc_name, user, totp, icon_set=self.icon_set)
-            card.edit_requested.connect(self.edit_account)
-            card.delete_requested.connect(self.delete_account)
-            self.grid_layout.addWidget(card)
-            self.cards.append(card)
+                # Create new card
+                card = OtpCard(
+                    account, icon_set=self.icon_set, start_hidden=start_hidden
+                )
+                card.edit_requested.connect(self.edit_account)
+                card.delete_requested.connect(self.delete_account)
+                self.grid_layout.addWidget(card)
+                self.cards.append(card)
+
+        # Remove surplus cards from the end
+        if num_cards > num_accounts:
+            for _ in range(num_cards - num_accounts):
+                card_to_remove = self.cards.pop()
+                card_to_remove.deleteLater()
+
         if hasattr(self, "search_bar"):
             self.filter_cards(self.search_bar.text())
 
@@ -423,12 +476,22 @@ class Virex(QMainWindow):
 
     def lock_app(self):
         """Lock the app and prompt for master password."""
-        pw = prompt_for_password()
-        if not check_master_password(pw):
-            QMessageBox.warning(self, "Locked", "Incorrect password. Exiting.")
-            QApplication.quit()
-        else:
-            self.master_pw = pw
+        while True:
+            pw, ok = QInputDialog.getText(
+                self,
+                "Application Locked",
+                "Enter master password to unlock:",
+                echo=QLineEdit.EchoMode.Password,
+            )
+            if not ok:  # User pressed cancel or closed the dialog
+                QApplication.quit()
+                return
+            if check_master_password(pw):
+                self.master_pw = pw
+                if self.auto_lock_timer:  # Reset timer on successful unlock
+                    self.auto_lock_timer.start()
+                return
+            QMessageBox.warning(self, "Unlock Failed", "Incorrect password.")
 
     def show_settings_menu(self):
         """Create and show a dropdown menu for the settings button."""
@@ -445,31 +508,41 @@ class Virex(QMainWindow):
         export_enc_action = menu.addAction("Export Encrypted Backup...")
         export_enc_action.triggered.connect(self.export_accounts_encrypted)
 
+        import_enc_action = menu.addAction("Import Encrypted Backup...")
+        import_enc_action.triggered.connect(self.import_accounts_encrypted)
+
         menu.addSeparator()
 
         reset_action = menu.addAction("Reset All Data...")
         reset_action.triggered.connect(self.handle_reset_request)
 
-        menu.exec(self.btn_settings.mapToGlobal(self.btn_settings.rect().bottomLeft()))
+        # Position menu below the button
+        button_pos = self.btn_settings.mapToGlobal(QPoint(0, 0))
+        menu_pos = QPoint(button_pos.x(), button_pos.y() + self.btn_settings.height())
+        menu.exec(menu_pos)
 
     def show_settings_dialog(self):
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            if "pending_new_master_pw" in self.settings:
-                if not check_master_password(
-                    self.settings.get("pending_old_master_pw")
-                ):
+            # Handle password change logic here, decoupled from the dialog
+            old_pw = dlg.old_pw.text()
+            new_pw = dlg.new_pw.text()
+            if old_pw and new_pw:
+                if not check_master_password(old_pw):
                     QMessageBox.warning(
                         self, "Password Error", "Current master password incorrect."
                     )
-                    return
-                set_master_password(self.settings["pending_new_master_pw"])
-                self.master_pw = self.settings["pending_new_master_pw"]
-                self.settings.pop("pending_new_master_pw", None)
-                self.settings.pop("pending_old_master_pw", None)
-                QMessageBox.information(
-                    self, "Password Changed", "Master password changed successfully!"
-                )
+                else:
+                    set_master_password(new_pw)
+                    self.master_pw = new_pw
+                    save_accounts(self.accounts, self.master_pw)  # Re-encrypt accounts
+                    QMessageBox.information(
+                        self,
+                        "Password Changed",
+                        "Master password changed successfully!",
+                    )
+
+            self.settings = dlg.current_settings
             clip_timeout = self.settings.get("clipboard_clear_timeout", 0)
             self.setup_auto_lock()
             if self.clipboard_clear_timer:
@@ -534,14 +607,14 @@ class Virex(QMainWindow):
             self, "Export OTP Entries to CSV", "", "CSV Files (*.csv)"
         )
         if filename:
-            success, error = export_accounts_csv(self.accounts, filename)
-            if success:
+            try:
+                export_accounts_csv(self.accounts, filename)
                 QMessageBox.information(
                     self, "Export Successful", "OTP accounts exported successfully!"
                 )
-            else:
+            except Exception as e:
                 QMessageBox.warning(
-                    self, "Export Failed", f"Failed to export to CSV file:\n{error}"
+                    self, "Export Failed", f"Failed to export to CSV file:\n{e}"
                 )
 
     def import_csv(self):
@@ -549,10 +622,11 @@ class Virex(QMainWindow):
             self, "Import OTP Entries from CSV", "", "CSV Files (*.csv)"
         )
         if filename:
-            imported_accounts, error = import_accounts_csv(filename)
-            if error:
+            try:
+                imported_accounts = import_accounts_csv(filename)
+            except Exception as e:
                 QMessageBox.warning(
-                    self, "Import Failed", f"Failed to import CSV file:\n{error}"
+                    self, "Import Failed", f"Failed to import CSV file:\n{e}"
                 )
                 return
             imported_count = 0
@@ -608,30 +682,16 @@ class Virex(QMainWindow):
             self.import_qr_image()
 
     def scan_qr_code_camera(self):
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
+        dlg = CameraScannerDialog(self)
+        if not dlg.cap.isOpened():
             QMessageBox.warning(self, "Camera Error", "Could not open camera.")
             return
-        QMessageBox.information(
-            self, "Camera Scan", "Press 'q' to capture and decode a QR code."
-        )
-        decoded_data = None
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            cv2.imshow('QR Code Scanner - Press "q" to scan', frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                decoded_objs = decode(frame)
-                if decoded_objs:
-                    decoded_data = decoded_objs[0].data.decode()
-                break
-        cap.release()
-        cv2.destroyAllWindows()
-        if decoded_data:
-            self.handle_decoded_qr_data(decoded_data)
-        else:
-            QMessageBox.warning(self, "Scan Failed", "No QR code detected.")
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            if dlg.decoded_data:
+                self.handle_decoded_qr_data(dlg.decoded_data)
+            else:
+                QMessageBox.warning(self, "Scan Failed", "No QR code detected.")
 
     def import_qr_image(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -732,13 +792,13 @@ class Virex(QMainWindow):
             if not ok or not pw:
                 QMessageBox.warning(self, "Export Cancelled", "No password entered.")
                 return
-            success, error = export_accounts_encrypted(self.accounts, filename, pw)
-            if success:
+            try:
+                export_accounts_encrypted(self.accounts, filename, pw)
                 QMessageBox.information(
                     self, "Export Successful", "Accounts exported (encrypted)!"
                 )
-            else:
-                QMessageBox.warning(self, "Export Failed", f"Error:\n{error}")
+            except Exception as e:
+                QMessageBox.warning(self, "Export Failed", f"Error:\n{e}")
 
     def import_accounts_encrypted(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -754,9 +814,10 @@ class Virex(QMainWindow):
             if not ok or not pw:
                 QMessageBox.warning(self, "Import Cancelled", "No password entered.")
                 return
-            imported_accounts, error = import_accounts_encrypted(filename, pw)
-            if error:
-                QMessageBox.warning(self, "Import Failed", f"Error:\n{error}")
+            try:
+                imported_accounts = import_accounts_encrypted(filename, pw)
+            except Exception as e:
+                QMessageBox.warning(self, "Import Failed", f"Error:\n{e}")
                 return
             imported_count = 0
             for account in imported_accounts:
