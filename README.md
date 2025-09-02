@@ -4,7 +4,7 @@ A Python desktop application for managing OTP (One-Time Password) accounts using
 
 ## Features
 
-- Secure master password protection
+- Secure master password protection (accounts are encrypted at rest)
 - Add OTP accounts via secret key, otpauth URI, CSV import, or QR code (camera/image)
 - Export/import accounts to/from CSV
 - Auto-lock and clipboard clear timeout settings
@@ -12,15 +12,14 @@ A Python desktop application for managing OTP (One-Time Password) accounts using
 - Responsive, modern UI
 
 ## Project Structure
-app/ 
-├── helpers.py # Helper functions (account, clipboard, CSV, QR) 
-├── main.py # Main application window and logic 
-├── settings.py # Settings dialog and config management 
-├── theme.py # Theme and palette management 
-├── images/ # UI icons and images 
-├── accounts.json # OTP account data (created at runtime) 
-├── config.json # User settings (created at runtime) tests/
-
+```
+app/
+├── main.py         # Main application window and logic
+├── helpers.py      # Helper functions (encryption, account management, etc.)
+├── settings.py     # Settings dialog and config management
+├── theme.py        # Theme and palette management
+└── images/         # UI icons and images
+```
 
 ## Installation
 
@@ -43,13 +42,9 @@ app/
 
 Run the main application:
 
-python main.py
-
-## Project Structure
-
-app/
-├── helpers.py # Helper functions
-├── main.py # Main application entry point
+```bash
+python app/main.py
+```
 
 ## License
 

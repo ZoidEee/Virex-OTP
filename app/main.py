@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QMessageBox,
     QGraphicsDropShadowEffect,
+    QMenu,
     QFileDialog,
     QFrame,
     QDialog,
@@ -288,7 +289,7 @@ class Virex(QMainWindow):
     def __init__(self, master_pw):
         super().__init__()
         self.master_pw = master_pw
-        self.accounts = load_accounts()
+        self.accounts = load_accounts(self.master_pw)
         self.cards = []
         self.settings = load_settings()
         self.clipboard_clear_timer = None
@@ -333,7 +334,7 @@ class Virex(QMainWindow):
         self.btn_settings.setIcon(QIcon(f"images/{self.icon_set}-settings-24.png"))
         self.btn_settings.setIconSize(QSize(20, 20))
         self.btn_settings.setFixedSize(25, 25)
-        self.btn_settings.clicked.connect(self.show_settings_options)
+        self.btn_settings.clicked.connect(self.show_settings_menu)
         top_layout = QHBoxLayout()
         top_layout.addWidget(self.btn_new)
         top_layout.addWidget(search_bar)
@@ -384,7 +385,7 @@ class Virex(QMainWindow):
         )
         if ok and name:
             account["name"] = name
-            save_accounts(self.accounts)
+            save_accounts(self.accounts, self.master_pw)
             self.refresh_tiles()
 
     def delete_account(self, card):
@@ -394,7 +395,7 @@ class Virex(QMainWindow):
         )
         if res == QMessageBox.Yes:
             self.accounts.pop(idx)
-            save_accounts(self.accounts)
+            save_accounts(self.accounts, self.master_pw)
             self.refresh_tiles()
 
     def setup_auto_lock(self):
@@ -429,7 +430,29 @@ class Virex(QMainWindow):
         else:
             self.master_pw = pw
 
-    def show_settings_options(self):
+    def show_settings_menu(self):
+        """Create and show a dropdown menu for the settings button."""
+        menu = QMenu(self)
+
+        preferences_action = menu.addAction("Preferences...")
+        preferences_action.triggered.connect(self.show_settings_dialog)
+
+        menu.addSeparator()
+
+        export_csv_action = menu.addAction("Export to CSV...")
+        export_csv_action.triggered.connect(self.export_accounts_csv)
+
+        export_enc_action = menu.addAction("Export Encrypted Backup...")
+        export_enc_action.triggered.connect(self.export_accounts_encrypted)
+
+        menu.addSeparator()
+
+        reset_action = menu.addAction("Reset All Data...")
+        reset_action.triggered.connect(self.handle_reset_request)
+
+        menu.exec(self.btn_settings.mapToGlobal(self.btn_settings.rect().bottomLeft()))
+
+    def show_settings_dialog(self):
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if "pending_new_master_pw" in self.settings:
@@ -455,16 +478,6 @@ class Virex(QMainWindow):
                 self.clipboard_clear_timer = QTimer(self)
                 self.clipboard_clear_timer.timeout.connect(self.clear_clipboard)
                 self.clipboard_clear_timer.start(clip_timeout * 1000)
-            if getattr(dlg, "backup_requested", False):
-                self.export_accounts_csv()
-            if getattr(dlg, "restore_requested", False):
-                self.import_csv()
-            if getattr(dlg, "encrypted_backup_requested", False):
-                self.export_accounts_encrypted()
-            if getattr(dlg, "encrypted_restore_requested", False):
-                self.import_accounts_encrypted()
-            if getattr(dlg, "reset_requested", False):
-                self.reset_all_data()
             self.save_settings()
             self.apply_theme()
             self.refresh_tiles()
@@ -492,9 +505,20 @@ class Virex(QMainWindow):
     def clear_clipboard(self):
         clear_clipboard()
 
-    def reset_all_data(self):
+    def handle_reset_request(self):
+        """Confirm and trigger reset of all data."""
+        res = QMessageBox.question(
+            self,
+            "Confirm Reset",
+            "This will delete all accounts and reset all settings. Are you sure?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if res == QMessageBox.StandardButton.Yes:
+            self._reset_all_data()
+
+    def _reset_all_data(self):
         self.accounts.clear()
-        save_accounts(self.accounts)
+        save_accounts(self.accounts, self.master_pw)
         self.settings = DEFAULT_SETTINGS.copy()
         self.save_settings()
         self.refresh_tiles()
@@ -536,7 +560,7 @@ class Virex(QMainWindow):
                 self.accounts.append(account)
                 imported_count += 1
             if imported_count > 0:
-                save_accounts(self.accounts)
+                save_accounts(self.accounts, self.master_pw)
                 self.refresh_tiles()
                 QMessageBox.information(
                     self,
@@ -643,29 +667,8 @@ class Virex(QMainWindow):
             if account_name:
                 account_entry["name"] = account_name
                 self.accounts.append(account_entry)
-                save_accounts(self.accounts)
+                save_accounts(self.accounts, self.master_pw)
                 self.refresh_tiles()
-
-    def edit_account(self, card):
-        idx = self.cards.index(card)
-        account = self.accounts[idx]
-        name, ok = QInputDialog.getText(
-            self, "Edit Account Name", "Account Name:", text=account.get("name", "")
-        )
-        if ok and name:
-            account["name"] = name
-            save_accounts(self.accounts)
-            self.refresh_tiles()
-
-    def delete_account(self, card):
-        idx = self.cards.index(card)
-        res = QMessageBox.question(
-            self, "Delete Account", "Are you sure?", QMessageBox.Yes | QMessageBox.No
-        )
-        if res == QMessageBox.Yes:
-            self.accounts.pop(idx)
-            save_accounts(self.accounts)
-            self.refresh_tiles()
 
     def prompt_secret_key(self):
         popup = NewPopup("Enter secret key (Base32):", "Secret Key Entry")
@@ -684,7 +687,7 @@ class Virex(QMainWindow):
                 account_name = popup_name.textValue().strip()
                 if account_name:
                     self.accounts.append({"name": account_name, "secret": secret})
-                    save_accounts(self.accounts)
+                    save_accounts(self.accounts, self.master_pw)
                     self.refresh_tiles()
 
     def prompt_key_uri(self):
@@ -709,7 +712,7 @@ class Virex(QMainWindow):
                 account_name = popup_name.textValue().strip()
                 if account_name:
                     self.accounts.append({"name": account_name, "key_uri": key_uri})
-                    save_accounts(self.accounts)
+                    save_accounts(self.accounts, self.master_pw)
                     self.refresh_tiles()
 
     def export_accounts_encrypted(self):
@@ -760,7 +763,7 @@ class Virex(QMainWindow):
                 self.accounts.append(account)
                 imported_count += 1
             if imported_count > 0:
-                save_accounts(self.accounts)
+                save_accounts(self.accounts, self.master_pw)
                 self.refresh_tiles()
                 QMessageBox.information(
                     self, "Import Successful", f"{imported_count} accounts imported!"

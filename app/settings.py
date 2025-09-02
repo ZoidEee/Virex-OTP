@@ -65,11 +65,6 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumSize(400, 500)
         self.current_settings = current_settings
-        self.backup_requested = False
-        self.restore_requested = False
-        self.reset_requested = False
-        self.encrypted_backup_requested = False
-        self.encrypted_restore_requested = False
         self.init_ui()
         self.load_settings()
         self.apply_theme()
@@ -121,27 +116,6 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.theme_combo)
 
         layout.addSpacing(16)
-        br_layout = QHBoxLayout()
-        br_layout.setSpacing(12)
-        self.backup_btn = QPushButton("Backup Accounts")
-        self.restore_btn = QPushButton("Restore Accounts")
-        br_layout.addWidget(self.backup_btn)
-        br_layout.addWidget(self.restore_btn)
-
-        self.enc_backup_btn = QPushButton("Encrypted Backup")
-        self.enc_restore_btn = QPushButton("Encrypted Restore")
-        br_layout.addWidget(self.enc_backup_btn)
-        br_layout.addWidget(self.enc_restore_btn)
-        self.enc_backup_btn.clicked.connect(self.on_enc_backup)
-        self.enc_restore_btn.clicked.connect(self.on_enc_restore)
-
-        layout.addLayout(br_layout)
-
-        layout.addSpacing(8)
-        self.reset_btn = QPushButton("Reset All Data")
-        layout.addWidget(self.reset_btn)
-
-        layout.addSpacing(16)
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
         self.save_btn = QPushButton("Save")
@@ -153,9 +127,6 @@ class SettingsDialog(QDialog):
         self.setLayout(layout)
         self.save_btn.clicked.connect(self.on_save)
         self.cancel_btn.clicked.connect(self.reject)
-        self.backup_btn.clicked.connect(self.on_backup)
-        self.restore_btn.clicked.connect(self.on_restore)
-        self.reset_btn.clicked.connect(self.on_reset)
 
     def load_settings(self):
         """Load current settings into the dialog fields."""
@@ -222,34 +193,4 @@ class SettingsDialog(QDialog):
         theme_idx = self.theme_combo.currentIndex()
         theme_val = ["system", "light", "dark"][theme_idx]
         self.current_settings["theme"] = theme_val
-        self.accept()
-
-    def on_backup(self):
-        """Trigger backup request (handled in main window)."""
-        self.backup_requested = True
-        self.accept()
-
-    def on_restore(self):
-        """Trigger restore request (handled in main window)."""
-        self.restore_requested = True
-        self.accept()
-
-    def on_reset(self):
-        """Confirm and trigger reset of all data."""
-        res = QMessageBox.question(
-            self,
-            "Confirm Reset",
-            "This will delete all accounts and reset all settings. Are you sure?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if res == QMessageBox.StandardButton.Yes:
-            self.reset_requested = True
-            self.accept()
-
-    def on_enc_backup(self):
-        self.encrypted_backup_requested = True
-        self.accept()
-
-    def on_enc_restore(self):
-        self.encrypted_restore_requested = True
         self.accept()

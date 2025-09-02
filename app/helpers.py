@@ -3,7 +3,9 @@ import json
 import os
 import sys
 import csv
+import base64
 from urllib.parse import unquote, urlparse
+from cryptography.fernet import Fernet, InvalidToken
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QApplication
 
@@ -56,20 +58,50 @@ def prompt_for_password():
         QMessageBox.warning(None, "Error", "Incorrect password!")
 
 
-def save_accounts(accounts):
-    """Save accounts to file."""
-    with open(ACCOUNTS_FILE, "w") as f:
-        json.dump(accounts, f)
+def generate_storage_key(password):
+    """Generate a Fernet key from a password for storage encryption."""
+    return base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
 
 
-def load_accounts():
-    """Load accounts from file."""
+def save_accounts(accounts, master_pw):
+    """Encrypt and save accounts to file."""
+    try:
+        key = generate_storage_key(master_pw)
+        f = Fernet(key)
+        data = json.dumps(accounts).encode()
+        encrypted_data = f.encrypt(data)
+        with open(ACCOUNTS_FILE, "wb") as file:
+            file.write(encrypted_data)
+    except Exception as e:
+        QMessageBox.critical(None, "Save Failed", f"Could not save accounts file:\n{e}")
+
+
+def load_accounts(master_pw):
+    """Load and decrypt accounts from file."""
     if os.path.exists(ACCOUNTS_FILE):
         try:
-            with open(ACCOUNTS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return []
+            key = generate_storage_key(master_pw)
+            f = Fernet(key)
+            with open(ACCOUNTS_FILE, "rb") as file:
+                encrypted_data = file.read()
+            if not encrypted_data:
+                return []
+            decrypted_data = f.decrypt(encrypted_data)
+            return json.loads(decrypted_data)
+        except InvalidToken:
+            QMessageBox.critical(
+                None,
+                "Authentication Failed",
+                "Incorrect master password or corrupted data file. The application will now exit.",
+            )
+            sys.exit()
+        except Exception as e:
+            QMessageBox.critical(
+                None,
+                "Load Failed",
+                f"Could not load accounts file:\n{e}\nThe application will now exit.",
+            )
+            sys.exit()
     return []
 
 
