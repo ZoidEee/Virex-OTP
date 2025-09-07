@@ -1,27 +1,24 @@
 import sys
-import time
 import cv2
 import pyotp
-from PySide6.QtCore import Qt, QTimer, QRect, QSize, Signal, QPoint
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QIcon, QImage, QPixmap
+from PySide6.QtCore import Qt, QTimer, QSize, QPoint, QEvent
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QInputDialog,
     QPushButton,
     QLineEdit,
-    QLabel,
     QHBoxLayout,
     QVBoxLayout,
     QWidget,
     QScrollArea,
     QMessageBox,
-    QGraphicsDropShadowEffect,
     QMenu,
     QFileDialog,
-    QFrame,
-    QDialog,
+    QDialog, QSystemTrayIcon,
 )
+
 from pyzbar.pyzbar import decode
 from app.theme import get_theme, apply_palette, get_stylesheet
 from app.settings import (
@@ -44,288 +41,12 @@ from app.helpers import (
     export_accounts_encrypted,
     import_accounts_encrypted,
 )
-
-
-class NewPopup(QInputDialog):
-    """Custom popup for text input."""
-
-    def __init__(self, prompt, title="Input"):
-        super().__init__()
-        self.setWindowTitle(title)
-        self.setLabelText(prompt)
-        self.setOkButtonText("Next")
-        self.setCancelButtonText("Cancel")
-        self.resize(400, 120)
-
-
-class CircularCountdown(QWidget):
-    """Circular countdown widget for TOTP interval."""
-
-    def __init__(self, interval=30, parent=None):
-        super().__init__(parent)
-        self.interval = interval
-        self.value = interval
-        self.setFixedSize(60, 60)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    def update_value(self, value):
-        self.value = value
-        self.update()
-
-    def paintEvent(self, event):
-        size = min(self.width(), self.height())
-        rect = QRect(4, 4, size - 8, size - 8)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#E0E0E0"), 5))
-        painter.drawEllipse(rect)
-        angle_span = 360 * (self.value / self.interval)
-        painter.setPen(QPen(QColor("#6C4CE0"), 4))
-        painter.drawArc(rect, 90 * 16, -int(angle_span * 16))
-        painter.setPen(QColor("#6C4CE0"))
-        font = QFont("Arial", 15, QFont.Weight.Bold)
-        painter.setFont(font)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self.value}")
-
-
-class OptionsDialog(QDialog):
-    """Dialog for account options: Edit and Delete."""
-
-    def __init__(self, account_name, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"Options for {account_name}")
-        self.setMinimumSize(220, 120)
-        layout = QVBoxLayout()
-        self.edit_btn = QPushButton("Edit")
-        self.delete_btn = QPushButton("Delete")
-        self.cancel_btn = QPushButton("Cancel")
-        layout.addWidget(self.edit_btn)
-        layout.addWidget(self.delete_btn)
-        layout.addWidget(self.cancel_btn)
-        self.setLayout(layout)
-        self.edit_btn.clicked.connect(self.accept)
-        self.delete_btn.clicked.connect(self.reject)
-        self.cancel_btn.clicked.connect(self.close)
-
-
-class OtpCard(QWidget):
-    """Widget for displaying an OTP account."""
-
-    edit_requested = Signal(object)  # Emits self
-    delete_requested = Signal(object)  # Emits self
-
-    def __init__(self, account, icon_set="light", start_hidden=False, parent=None):
-        super().__init__(parent)
-        self.icon_set = icon_set
-        self.code_hidden = False  # Default state
-        self.init_ui()
-        self.update_data(account)  # Populate UI with data
-
-        self.setFixedSize(300, 100)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setColor(QColor(100, 100, 100, 50))
-        shadow.setBlurRadius(14)
-        shadow.setOffset(0, 4)
-        self.frame.setGraphicsEffect(shadow)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_totp)
-        self.timer.start(1000)
-        self.update_totp()
-        if start_hidden:
-            self.toggle_code_visibility()
-
-    def update_data(self, account):
-        """Update the card with new account data."""
-        if "key_uri" in account:
-            self.account_name, self.user = parse_account_label(account["key_uri"])
-            self.totp = pyotp.parse_uri(account["key_uri"])
-        else:
-            self.account_name = account.get("name", "Unknown")
-            self.user = ""
-            self.totp = pyotp.TOTP(account.get("secret", ""))
-        self.interval = self.totp.interval
-        self.label_account.setText(self.account_name)
-        self.label_user.setText(self.user)
-        self.update_totp()
-
-    def init_ui(self):
-        self.frame = QFrame(self)
-        self.frame.setObjectName("frame")
-        self.frame.setFixedSize(300, 100)
-        main_layout = QHBoxLayout(self.frame)
-        main_layout.setContentsMargins(10, 0, 10, 0)
-        info_layout = QVBoxLayout()
-        info_layout.setContentsMargins(0, 0, 0, 5)
-        info_layout.setSpacing(0)
-        info_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.label_account = QLabel("Account")
-        self.label_account.setObjectName("label_account")
-        self.label_account.setFixedHeight(25)
-        self.label_account.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        self.label_account.setFont(QFont("Times", 12))
-        self.label_user = QLabel("User")
-        self.label_user.setObjectName("label_user")
-        self.label_user.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        self.label_user.setFixedHeight(25)
-        self.label_user.setFont(QFont("Times", 9))
-        self.label_current = QLabel("-- -- --")
-        self.label_current.setObjectName("label_current")
-        self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        self.label_current.setFixedHeight(25)
-        self.label_current.setFont(QFont("Times", 15))
-        info_layout.addWidget(self.label_account)
-        info_layout.addWidget(self.label_user)
-        info_layout.addWidget(self.label_current)
-        main_layout.addLayout(info_layout)
-        self.countdown_circle = CircularCountdown(30)  # Default, will be updated
-        main_layout.addWidget(self.countdown_circle)
-        functions_layout = QVBoxLayout()
-        functions_layout.setContentsMargins(0, 0, 0, 0)
-        functions_layout.setSpacing(0)
-        top_layout = QHBoxLayout()
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.options_button = QPushButton()
-        self.options_button.setStyleSheet(
-            "border: none; background-color: transparent;"
-        )
-        self.options_button.setObjectName("options_button")
-        self.options_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.options_button.setIcon(QIcon(f"images/{self.icon_set}-options-16.png"))
-        self.options_button.setIconSize(QSize(20, 20))
-        self.options_button.setFixedSize(30, 30)
-        self.options_button.clicked.connect(self.show_options_dialog)
-        top_layout.addWidget(self.options_button)
-        functions_layout.addLayout(top_layout)
-        bottom_layout = QHBoxLayout()
-        bottom_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bottom_layout.setContentsMargins(0, 0, 0, 15)
-        self.toggle_button = QPushButton()
-        self.toggle_button.setObjectName("toggle_button")
-        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        icon_hide = QIcon(f"images/{self.icon_set}-hide-24.png")
-        icon_show = QIcon(f"images/{self.icon_set}-show-24.png")
-        self.toggle_button.setIcon(icon_hide)
-        self.toggle_button.setIconSize(QSize(20, 20))
-        self.toggle_button.setFixedSize(30, 30)
-        self.toggle_button.clicked.connect(self.toggle_code_visibility)
-        self.icon_hide = icon_hide
-        self.icon_show = icon_show
-        bottom_layout.addWidget(self.toggle_button)
-        self.copy_button = QPushButton()
-        self.copy_button.setObjectName("copy_button")
-        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        icon_copy = QIcon(f"images/{self.icon_set}-copy-24.png")
-        self.copy_button.setIcon(icon_copy)
-        self.copy_button.setIconSize(QSize(20, 20))
-        self.copy_button.setFixedSize(30, 30)
-        self.copy_button.clicked.connect(self.copy_to_clipboard)
-        bottom_layout.addWidget(self.copy_button)
-        functions_layout.addLayout(bottom_layout)
-        main_layout.addLayout(functions_layout)
-
-    def show_options_dialog(self):
-        dlg = OptionsDialog(self.account_name, self)
-        result = dlg.exec()
-        if result == QDialog.DialogCode.Accepted:
-            self.edit_requested.emit(self)
-        elif result == QDialog.DialogCode.Rejected:
-            self.delete_requested.emit(self)
-
-    def toggle_code_visibility(self):
-        if self.code_hidden:
-            try:
-                current = self.totp.now()
-            except Exception:
-                current = "-- -- --"
-            self.label_current.setText(" ".join([current[:3], current[3:]]))
-            self.toggle_button.setIcon(self.icon_hide)
-            self.code_hidden = False
-        else:
-            self.label_current.setText("*** ***")
-            self.toggle_button.setIcon(self.icon_show)
-            self.code_hidden = True
-
-    def update_totp(self):
-        now = int(time.time())
-        elapsed = now % self.interval
-        remaining = self.interval - elapsed
-        self.countdown_circle.update_value(remaining)
-        if not self.code_hidden:
-            try:
-                current = self.totp.now()
-            except Exception:
-                current = "-- -- --"
-            self.label_current.setText(" ".join([current[:3], current[3:]]))
-
-    def update_icons(self, icon_set):
-        self.icon_set = icon_set
-        self.options_button.setIcon(QIcon(f"images/{self.icon_set}-options-16.png"))
-        self.icon_hide = QIcon(f"images/{self.icon_set}-hide-24.png")
-        self.icon_show = QIcon(f"images/{self.icon_set}-show-24.png")
-        self.toggle_button.setIcon(
-            self.icon_hide if not self.code_hidden else self.icon_show
-        )
-        self.copy_button.setIcon(QIcon(f"images/{self.icon_set}-copy-24.png"))
-
-    def copy_to_clipboard(self):
-        try:
-            current = self.totp.now()
-        except Exception:
-            current = ""
-        clipboard = QApplication.clipboard()
-        clipboard.setText(current)
-
-
-class CameraScannerDialog(QDialog):
-    """Dialog for scanning QR codes using the camera."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Scan QR Code")
-        self.setMinimumSize(400, 300)
-        self.decoded_data = None
-
-        layout = QVBoxLayout()
-        self.camera_label = QLabel("Initializing camera...")
-        self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.camera_label)
-        self.setLayout(layout)
-
-        self.cap = cv2.VideoCapture(0)
-        if not self.cap.isOpened():
-            self.camera_label.setText("Could not open camera.")
-            return
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.next_frame)
-        self.timer.start(1000 // 30)  # ~30 FPS
-
-    def next_frame(self):
-        ret, frame = self.cap.read()
-        if not ret:
-            self.timer.stop()
-            return
-
-        # Convert to QImage
-        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        qt_image = QImage(
-            rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888
-        )
-        self.camera_label.setPixmap(QPixmap.fromImage(qt_image))
-
-        decoded_objs = decode(frame)
-        if decoded_objs:
-            self.decoded_data = decoded_objs[0].data.decode()
-            self.accept()
-
-    def closeEvent(self, event):
-        self.timer.stop()
-        if self.cap.isOpened():
-            self.cap.release()
-        super().closeEvent(event)
+from app.about import AboutDialog
+from app.widgets import (
+    OtpCard,
+    NewPopup,
+    CameraScannerDialog,
+)
 
 
 class Virex(QMainWindow):
@@ -359,12 +80,13 @@ class Virex(QMainWindow):
         self.setWindowTitle("Virex")
         self.setFixedSize(350, 550)
         self.setup_mainwindow()
+        self.setup_tray_icon()
         self.refresh_tiles()
 
     def setup_mainwindow(self):
         self.btn_new = QPushButton()
         self.btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_new.setStyleSheet("background-color: transparent; border: none;")
+        self.btn_new.setObjectName("transparentButton")
         self.btn_new.setIcon(QIcon(f"images/{self.icon_set}-plus-24.png"))
         self.btn_new.setIconSize(QSize(20, 20))
         self.btn_new.setFixedSize(25, 25)
@@ -375,7 +97,7 @@ class Virex(QMainWindow):
         search_bar.textChanged.connect(self.filter_cards)
         self.btn_settings = QPushButton()
         self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_settings.setStyleSheet("background-color: transparent; border: none;")
+        self.btn_settings.setObjectName("transparentButton")
         self.btn_settings.setIcon(QIcon(f"images/{self.icon_set}-settings-24.png"))
         self.btn_settings.setIconSize(QSize(20, 20))
         self.btn_settings.setFixedSize(25, 25)
@@ -384,14 +106,19 @@ class Virex(QMainWindow):
         top_layout.addWidget(self.btn_new)
         top_layout.addWidget(search_bar)
         top_layout.addWidget(self.btn_settings)
+
+
         self.grid_layout = QVBoxLayout()
-        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.grid_layout.setSpacing(2)
+        #self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        #self.grid_layout.setSpacing(2)
         scroll_area = QScrollArea()
         container = QWidget()
         container.setLayout(self.grid_layout)
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll_area.setWidget(container)
         scroll_area.setWidgetResizable(True)
+
+
         main_layout = QVBoxLayout()
         main_layout.addLayout(top_layout)
         main_layout.addWidget(scroll_area)
@@ -400,32 +127,21 @@ class Virex(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def refresh_tiles(self):
-        num_accounts = len(self.accounts)
-        num_cards = len(self.cards)
+        # Clear existing cards from layout and list
+        for card in self.cards:
+            self.grid_layout.removeWidget(card)
+            card.deleteLater()
+        self.cards.clear()
+
         start_hidden = self.settings.get("otp_display_mode") == "hide"
 
-        # Update or create cards
-        for i, account in enumerate(self.accounts):
-            if i < num_cards:
-                # Update existing card
-                card = self.cards[i]
-                card.update_data(account)
-                card.show()
-            else:
-                # Create new card
-                card = OtpCard(
-                    account, icon_set=self.icon_set, start_hidden=start_hidden
-                )
-                card.edit_requested.connect(self.edit_account)
-                card.delete_requested.connect(self.delete_account)
-                self.grid_layout.addWidget(card)
-                self.cards.append(card)
-
-        # Remove surplus cards from the end
-        if num_cards > num_accounts:
-            for _ in range(num_cards - num_accounts):
-                card_to_remove = self.cards.pop()
-                card_to_remove.deleteLater()
+        # Re-create all cards
+        for account in self.accounts:
+            card = OtpCard(account, icon_set=self.icon_set, start_hidden=start_hidden)
+            card.edit_requested.connect(self.edit_account)
+            card.delete_requested.connect(self.delete_account)
+            self.grid_layout.addWidget(card)
+            self.cards.append(card)
 
         if hasattr(self, "search_bar"):
             self.filter_cards(self.search_bar.text())
@@ -433,11 +149,10 @@ class Virex(QMainWindow):
     def edit_account(self, card):
         idx = self.cards.index(card)
         account = self.accounts[idx]
-        name, ok = QInputDialog.getText(
-            self, "Edit Account Name", "Account Name:", text=account.get("name", "")
-        )
-        if ok and name:
-            account["name"] = name
+        popup = NewPopup("Edit Account Name:", "Edit Account")
+        popup.setTextValue(account.get("name", ""))
+        if popup.exec() == QDialog.DialogCode.Accepted and popup.textValue():
+            account["name"] = popup.textValue()
             save_accounts(self.accounts, self.master_pw)
             self.refresh_tiles()
 
@@ -476,6 +191,11 @@ class Virex(QMainWindow):
 
     def lock_app(self):
         """Lock the app and prompt for master password."""
+        # Hide all codes before showing the lock dialog
+        for card in self.cards:
+            if not card.code_hidden:
+                card.toggle_code_visibility()
+
         while True:
             pw, ok = QInputDialog.getText(
                 self,
@@ -490,6 +210,11 @@ class Virex(QMainWindow):
                 self.master_pw = pw
                 if self.auto_lock_timer:  # Reset timer on successful unlock
                     self.auto_lock_timer.start()
+                # Restore visibility based on settings after unlock
+                start_hidden = self.settings.get("otp_display_mode") == "hide"
+                for card in self.cards:
+                    if card.code_hidden and not start_hidden:
+                        card.toggle_code_visibility()
                 return
             QMessageBox.warning(self, "Unlock Failed", "Incorrect password.")
 
@@ -511,6 +236,9 @@ class Virex(QMainWindow):
         import_enc_action = menu.addAction("Import Encrypted Backup...")
         import_enc_action.triggered.connect(self.import_accounts_encrypted)
 
+        about_action = menu.addAction("About Virex OTP")
+        about_action.triggered.connect(self.show_about_dialog)
+
         menu.addSeparator()
 
         reset_action = menu.addAction("Reset All Data...")
@@ -520,6 +248,10 @@ class Virex(QMainWindow):
         button_pos = self.btn_settings.mapToGlobal(QPoint(0, 0))
         menu_pos = QPoint(button_pos.x(), button_pos.y() + self.btn_settings.height())
         menu.exec(menu_pos)
+
+    def show_about_dialog(self):
+        dlg = AboutDialog(self)
+        dlg.exec()
 
     def show_settings_dialog(self):
         dlg = SettingsDialog(self.settings, self)
@@ -832,9 +564,28 @@ class Virex(QMainWindow):
             else:
                 QMessageBox.information(self, "Import", "No new accounts found.")
 
+    def setup_tray_icon(self):
+        self.tray_icon = QSystemTrayIcon(QIcon("images/icon.png"), self)
+        self.tray_icon.setToolTip("Virex OTP")
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("Show/Hide")
+        show_action.triggered.connect(self.toggle_visibility)
+        quit_action = tray_menu.addAction("Quit")
+        quit_action.triggered.connect(QApplication.quit)
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+
+    def on_tray_icon_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:  # Left-click
+            self.toggle_visibility()
+
+    def toggle_visibility(self):
+        self.setVisible(not self.isVisible())
+
     def closeEvent(self, event):
-        self.save_settings()
-        super().closeEvent(event)
+        event.ignore()
+        self.hide()
 
 
 if __name__ == "__main__":

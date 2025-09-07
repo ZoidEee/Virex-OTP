@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -11,6 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QMessageBox,
+    QCheckBox,
 )
 from PySide6.QtGui import QIntValidator
 from app.theme import get_theme, apply_palette, get_stylesheet
@@ -42,19 +42,6 @@ def save_settings(settings):
             json.dump(settings, f)
     except Exception:
         pass
-
-
-def is_strong_password(pw):
-    """Check password strength: min 8 chars, upper, lower, digit."""
-    if len(pw) < 8:
-        return False
-    if not re.search(r"[A-Z]", pw):
-        return False
-    if not re.search(r"[a-z]", pw):
-        return False
-    if not re.search(r"\d", pw):
-        return False
-    return True
 
 
 class SettingsDialog(QDialog):
@@ -158,13 +145,6 @@ class SettingsDialog(QDialog):
                 return
             if new_pw != conf_pw:
                 QMessageBox.warning(self, "Error", "New passwords do not match.")
-                return
-            if not is_strong_password(new_pw):
-                QMessageBox.warning(
-                    self,
-                    "Weak Password",
-                    "Password must be at least 8 characters and include upper, lower, and digit.",
-                )
                 return
 
         try:

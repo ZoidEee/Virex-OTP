@@ -13,13 +13,19 @@ A secure, modern, and cross-platform desktop application for managing your Two-F
 
 ## Project Structure
 ```
-app/
-├── main.py         # Main application window and logic
-├── helpers.py      # Helper functions (encryption, account management, etc.)
-├── settings.py     # Settings dialog and config management
-├── theme.py        # Theme and palette management
-└── images/         # UI icons and images
+app/ 
++├── main.py                 # Main application window and logic 
++├── helpers.py              # Helper functions (encryption, account management, etc.) 
++├── settings.py             # Settings dialog and config management 
++├── theme.py                # Theme and stylesheet management 
++├── widgets/ 
++│   ├── init.py           # Makes widgets a package 
++│   ├── circular_countdown.py # TOTP countdown timer widget 
++│   ├── dialogs.py            # Custom dialogs (popups, QR scanner) 
++│   └── otp_card.py           # The main card widget for displaying an account 
++└── images/                 # UI icons and images
 ```
+
 
 ## Installation
 

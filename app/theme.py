@@ -35,54 +35,140 @@ def get_stylesheet(theme):
     """Return the stylesheet string for the given theme."""
     if theme == "dark":
         return """
-            QDialog {
-                background: #232323;
-                color: #fff;
-                border-radius: 16px;
+            /* General Window and Dialog Styles */
+            QMainWindow, QDialog {
+                background-color: #232323;
+                color: #ffffff;
             }
-            QLabel { color: #fff; }
+
+            /* Labels */
+            QLabel {
+                color: #ffffff;
+            }
+
+            /* Input Fields */
             QLineEdit, QComboBox {
-                background: #232323;
-                color: #fff;
+                background-color: #232323;
+                color: #ffffff;
                 border: 1px solid #444;
                 border-radius: 8px;
                 padding: 4px 8px;
             }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+            }
+
+            /* Buttons */
             QPushButton {
-                background: #232323;
-                color: #fff;
+                background-color: #232323;
+                color: #ffffff;
                 border: 1px solid #444;
                 border-radius: 8px;
                 padding: 6px 12px;
             }
             QPushButton:hover {
-                background: #444;
-                color: #fff;
+                background-color: #444;
+            }
+            #transparentButton {
+                background-color: transparent;
+                border: none;
+            }
+
+            /* Scroll Area */
+            QScrollArea {
+                border: none;
+            }
+            QScrollBar:vertical {
+                width: 0px;
+            }
+
+            /* OtpCard Styles */
+            #frame {
+                background-color: #3a3a3a;
+                border-radius: 12px;
+            }
+            #label_account {
+                color: #ffffff;
+            }
+            #label_user {
+                color: #b0b0b0;
+            }
+            #label_current {
+                color: #ffffff;
+            }
+            #aboutTitle {
+                font-size: 18px;
+                font-weight: bold;
             }
         """
     return """
-        QDialog {
-            background: #fff;
+        /* General Window and Dialog Styles */
+        QMainWindow, QDialog {
+            background-color: #ffffff;
             color: #232323;
-            border-radius: 16px;
         }
-        QLabel { color: #232323; }
-        QLineEdit, QComboBox {
-            background: #fff;
+
+        /* Labels */
+        QLabel {
             color: #232323;
+        }
+
+        /* Input Fields */
+        QLineEdit, QComboBox {
+            background-color: #ffffff;
             border: 1px solid #ccc;
             border-radius: 8px;
             padding: 4px 8px;
         }
+        QComboBox::drop-down {
+            border: none;
+        }
+        QComboBox::down-arrow {
+            image: none;
+        }
+
+        /* Buttons */
         QPushButton {
-            background: #f5f5f5;
-            color: #232323;
+            background-color: #f5f5f5;
             border: 1px solid #ccc;
             border-radius: 8px;
             padding: 6px 12px;
         }
         QPushButton:hover {
-            background: #e0e0e0;
-            color: #232323;
+            background-color: #e0e0e0;
+        }
+        #transparentButton {
+            background-color: transparent;
+            border: none;
+        }
+
+        /* Scroll Area */
+        QScrollArea {
+            border: none;
+        }
+        QScrollBar:vertical {
+            width: 0px;
+        }
+
+        /* OtpCard Styles */
+        #frame {
+            background-color: #f0f0f0;
+            border-radius: 12px;
+        }
+        #label_account {
+            color: #000000;
+        }
+        #label_user {
+            color: #555555;
+        }
+        #label_current {
+            color: #000000;
+        }
+        #aboutTitle {
+            font-size: 18px;
+            font-weight: bold;
         }
     """
