@@ -1,4 +1,5 @@
 import sys
+import os
 import cv2
 import pyotp
 from PySide6.QtCore import Qt, QTimer, QSize, QPoint, QEvent
@@ -34,7 +35,6 @@ from app.helpers import (
     check_master_password,
     set_master_password,
     parse_account_label,
-    clear_clipboard,
     export_accounts_csv,
     import_accounts_csv,
     process_decoded_qr_data,
@@ -57,6 +57,7 @@ class Virex(QMainWindow):
         self.master_pw = master_pw
         self.accounts = load_accounts(self.master_pw)
         self.cards = []
+        self.last_copied_code = None
         self.settings = load_settings()
         self.clipboard_clear_timer = None
         self.auto_lock_timer = None
@@ -109,8 +110,6 @@ class Virex(QMainWindow):
 
 
         self.grid_layout = QVBoxLayout()
-        #self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        #self.grid_layout.setSpacing(2)
         scroll_area = QScrollArea()
         container = QWidget()
         container.setLayout(self.grid_layout)
@@ -127,7 +126,6 @@ class Virex(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def refresh_tiles(self):
-        # Clear existing cards from layout and list
         for card in self.cards:
             self.grid_layout.removeWidget(card)
             card.deleteLater()
@@ -135,7 +133,6 @@ class Virex(QMainWindow):
 
         start_hidden = self.settings.get("otp_display_mode") == "hide"
 
-        # Re-create all cards
         for account in self.accounts:
             card = OtpCard(account, icon_set=self.icon_set, start_hidden=start_hidden)
             card.edit_requested.connect(self.edit_account)
@@ -191,7 +188,6 @@ class Virex(QMainWindow):
 
     def lock_app(self):
         """Lock the app and prompt for master password."""
-        # Hide all codes before showing the lock dialog
         for card in self.cards:
             if not card.code_hidden:
                 card.toggle_code_visibility()
@@ -203,14 +199,13 @@ class Virex(QMainWindow):
                 "Enter master password to unlock:",
                 echo=QLineEdit.EchoMode.Password,
             )
-            if not ok:  # User pressed cancel or closed the dialog
+            if not ok:
                 QApplication.quit()
                 return
             if check_master_password(pw):
                 self.master_pw = pw
-                if self.auto_lock_timer:  # Reset timer on successful unlock
+                if self.auto_lock_timer:
                     self.auto_lock_timer.start()
-                # Restore visibility based on settings after unlock
                 start_hidden = self.settings.get("otp_display_mode") == "hide"
                 for card in self.cards:
                     if card.code_hidden and not start_hidden:
@@ -244,7 +239,6 @@ class Virex(QMainWindow):
         reset_action = menu.addAction("Reset All Data...")
         reset_action.triggered.connect(self.handle_reset_request)
 
-        # Position menu below the button
         button_pos = self.btn_settings.mapToGlobal(QPoint(0, 0))
         menu_pos = QPoint(button_pos.x(), button_pos.y() + self.btn_settings.height())
         menu.exec(menu_pos)
@@ -256,7 +250,6 @@ class Virex(QMainWindow):
     def show_settings_dialog(self):
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            # Handle password change logic here, decoupled from the dialog
             old_pw = dlg.old_pw.text()
             new_pw = dlg.new_pw.text()
             if old_pw and new_pw:
@@ -267,7 +260,7 @@ class Virex(QMainWindow):
                 else:
                     set_master_password(new_pw)
                     self.master_pw = new_pw
-                    save_accounts(self.accounts, self.master_pw)  # Re-encrypt accounts
+                    save_accounts(self.accounts, self.master_pw)
                     QMessageBox.information(
                         self,
                         "Password Changed",
@@ -308,7 +301,10 @@ class Virex(QMainWindow):
                 self.refresh_tiles()
 
     def clear_clipboard(self):
-        clear_clipboard()
+        clipboard = QApplication.clipboard()
+        if self.last_copied_code and clipboard.text() == self.last_copied_code:
+            clipboard.clear()
+            self.last_copied_code = None
 
     def handle_reset_request(self):
         """Confirm and trigger reset of all data."""
@@ -565,7 +561,9 @@ class Virex(QMainWindow):
                 QMessageBox.information(self, "Import", "No new accounts found.")
 
     def setup_tray_icon(self):
-        self.tray_icon = QSystemTrayIcon(QIcon("images/icon.png"), self)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(script_dir, "..", "images", "icon.png")
+        self.tray_icon = QSystemTrayIcon(QIcon(icon_path), self)
         self.tray_icon.setToolTip("Virex OTP")
         tray_menu = QMenu()
         show_action = tray_menu.addAction("Show/Hide")
@@ -577,7 +575,7 @@ class Virex(QMainWindow):
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
 
     def on_tray_icon_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:  # Left-click
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.toggle_visibility()
 
     def toggle_visibility(self):

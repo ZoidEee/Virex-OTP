@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QMessageBox,
-    QCheckBox,
 )
 from PySide6.QtGui import QIntValidator
 from app.theme import get_theme, apply_palette, get_stylesheet

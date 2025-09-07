@@ -119,20 +119,22 @@ def parse_account_label(key_uri):
         return "Unknown", ""
 
 
-def clear_clipboard():
-    """Clear the system clipboard."""
-    QApplication.clipboard().clear()
-
-
 def export_accounts_csv(accounts, filename):
     """Export accounts to a CSV file."""
-    with open(filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        for account in accounts:
-            name = account.get("name", "Unknown")
-            secret_or_uri = account.get("key_uri") or account.get("secret", "")
-            if secret_or_uri:
-                writer.writerow([name, secret_or_uri])
+    # Write to a temporary file first to prevent partial writes of sensitive data
+    temp_filename = filename + ".tmp"
+    try:
+        with open(temp_filename, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            for account in accounts:
+                name = account.get("name", "Unknown")
+                secret_or_uri = account.get("key_uri") or account.get("secret", "")
+                if secret_or_uri:
+                    writer.writerow([name, secret_or_uri])
+        os.replace(temp_filename, filename)  # Atomic move on success
+    finally:
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
 
 
 def import_accounts_csv(filename):

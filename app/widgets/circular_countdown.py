@@ -20,7 +20,7 @@ class CircularCountdown(QWidget):
 
     def update_theme(self, icon_set):
         self.icon_set = icon_set
-        self.update()  # Trigger a repaint
+        self.update()
 
     def paintEvent(self, event):
         size = min(self.width(), self.height())
@@ -28,7 +28,7 @@ class CircularCountdown(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        if self.icon_set == "dark":  # Light Mode
+        if self.icon_set == "dark":
             painter.setPen(QPen(QColor("#f0f0f0"), 5))
             painter.drawEllipse(rect)
             angle_span = 360 * (self.value / self.interval)
@@ -38,7 +38,7 @@ class CircularCountdown(QWidget):
             font = QFont("Arial", 15, QFont.Weight.Bold)
             painter.setFont(font)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self.value}")
-        else:  # Dark Mode
+        else:
             painter.setPen(QPen(QColor("#3a3a3a"), 5))
             painter.drawEllipse(rect)
             angle_span = 360 * (self.value / self.interval)

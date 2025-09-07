@@ -65,7 +65,7 @@ class CameraScannerDialog(QDialog):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.next_frame)
-        self.timer.start(1000 // 30)  # ~30 FPS
+        self.timer.start(1000 // 30)
 
     def next_frame(self):
         ret, frame = self.cap.read()
@@ -78,7 +78,6 @@ class CameraScannerDialog(QDialog):
         bytes_per_line = ch * w
         qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qt_image)
-        # Scale the pixmap to fit the label while preserving aspect ratio
         self.camera_label.setPixmap(
             pixmap.scaled(self.camera_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         )

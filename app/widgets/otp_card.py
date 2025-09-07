@@ -22,8 +22,9 @@ from .dialogs import OptionsDialog
 class OtpCard(QWidget):
     """Widget for displaying an OTP account."""
 
-    edit_requested = Signal(object)  # Emits self
-    delete_requested = Signal(object)  # Emits self
+    edit_requested = Signal(object)
+    delete_requested = Signal(object)
+    code_copied = Signal(str)
 
     def __init__(self, account, icon_set="light", start_hidden=False, parent=None):
         super().__init__(parent)
@@ -39,7 +40,7 @@ class OtpCard(QWidget):
         self.timer = QTimer(self)
 
         self.code_hidden = start_hidden
-        self.update_data(account)  # Populate UI with data
+        self.update_data(account)
 
         self.timer.timeout.connect(self.update_totp)
         self.timer.start(1000)
@@ -59,7 +60,7 @@ class OtpCard(QWidget):
             self.account_name = account.get("name", "Invalid Account")
             self.user = "Error: Invalid Secret/URI"
             self.totp = None
-            self.interval = 30  # Default
+            self.interval = 30
 
         self.label_account.setText(self.account_name)
         self.label_user.setText(self.user)
@@ -77,18 +78,15 @@ class OtpCard(QWidget):
         self.label_account = QLabel("Account")
         self.label_account.setObjectName("label_account")
         self.label_account.setFixedHeight(20)
-        #self.label_account.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_account.setFont(QFont("Times", 12))
 
         self.label_user = QLabel("User")
         self.label_user.setObjectName("label_user")
-        #self.label_user.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_user.setFixedHeight(21)
         self.label_user.setFont(QFont("Times", 9))
 
         self.label_current = QLabel("-- -- --")
         self.label_current.setObjectName("label_current")
-        #self.label_current.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.label_current.setFixedHeight(20)
         self.label_current.setFont(QFont("Times", 15))
 
@@ -195,5 +193,6 @@ class OtpCard(QWidget):
             current = self.totp.now() if self.totp else ""
             clipboard = QApplication.clipboard()
             clipboard.setText(current)
+            self.code_copied.emit(current)
         except Exception:
             pass
